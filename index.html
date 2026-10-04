@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>할일 보드</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>할일 보드</h1>
+    <button id="settingsBtn" class="icon-btn" aria-label="설정">⚙️</button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" data-col="todo" role="tab">할 일 <span class="count" data-count="todo">0</span></button>
+    <button class="tab" data-col="doing" role="tab">진행 중 <span class="count" data-count="doing">0</span></button>
+    <button class="tab" data-col="done" role="tab">완료 <span class="count" data-count="done">0</span></button>
+  </nav>
+
+  <main class="board">
+    <section class="column" data-col="todo">
+      <h2>할 일</h2>
+      <ul class="cards" data-list="todo"></ul>
+      <p class="empty">할 일이 없어요. 🎤 버튼을 눌러 말해보세요.</p>
+    </section>
+    <section class="column" data-col="doing">
+      <h2>진행 중</h2>
+      <ul class="cards" data-list="doing"></ul>
+      <p class="empty">진행 중인 일이 없어요.</p>
+    </section>
+    <section class="column" data-col="done">
+      <h2>완료</h2>
+      <ul class="cards" data-list="done"></ul>
+      <p class="empty">완료한 일이 없어요.</p>
+      <button id="clearDoneBtn" class="text-btn danger">완료 항목 비우기</button>
+    </section>
+  </main>
+
+  <p class="hint">탭: 다음 단계로 · 길게 누르기: 수정/삭제</p>
+
+  <form id="addForm" class="composer" autocomplete="off">
+    <input id="taskInput" type="text" placeholder="할 일 입력" enterkeyhint="done">
+    <button type="submit" class="add-btn" aria-label="추가">＋</button>
+    <button type="button" id="micBtn" class="mic-btn" aria-label="음성으로 입력">🎤</button>
+  </form>
+
+  <!-- 음성 인식 중 오버레이 -->
+  <div id="listening" class="listening" hidden>
+    <div class="pulse">🎤</div>
+    <p id="interim" class="interim">듣고 있어요…</p>
+    <button id="stopListenBtn" class="text-btn">취소</button>
+  </div>
+
+  <!-- 카드 메뉴 -->
+  <dialog id="cardMenu" class="sheet">
+    <p id="menuTitle" class="sheet-title"></p>
+    <button data-action="edit">✏️ 수정</button>
+    <button data-action="todo">↩️ 할 일로</button>
+    <button data-action="doing">▶️ 진행 중으로</button>
+    <button data-action="done">✅ 완료로</button>
+    <button data-action="delete" class="danger">🗑️ 삭제</button>
+    <button data-action="close" class="muted">닫기</button>
+  </dialog>
+
+  <!-- 설정 -->
+  <dialog id="settings" class="sheet">
+    <p class="sheet-title">설정 · 백업</p>
+    <button id="exportBtn">📤 백업 파일로 내보내기</button>
+    <button id="importBtn">📥 백업 파일 가져오기</button>
+    <input id="importFile" type="file" accept="application/json,.json" hidden>
+    <button data-action="close" class="muted">닫기</button>
+  </dialog>
+
+  <div id="toast" class="toast" hidden>
+    <span id="toastMsg"></span>
+    <button id="toastUndo" class="text-btn" hidden>되돌리기</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
