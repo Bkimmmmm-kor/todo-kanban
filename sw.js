@@ -1,11 +1,15 @@
-// 네트워크 우선이라 온라인이면 수정한 파일이 바로 반영됩니다.
-// 캐시 파일 목록(FILES)을 바꿀 때만 VERSION을 올려 주세요.
-const VERSION = 'v1';
+// 항상 서버에 최신 파일이 있는지 확인하고, 오프라인일 때만 캐시를 씁니다.
+// 앱을 수정해서 올릴 때마다 VERSION을 올려 주세요(폰이 새 버전을 바로 받음).
+const VERSION = 'v3';
 const CACHE = `kanban-${VERSION}`;
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -16,11 +20,11 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// 네트워크 우선, 오프라인이면 캐시 사용
+// 네트워크 우선(브라우저 HTTP 캐시 무시), 오프라인이면 캐시 사용
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+  if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin)) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));

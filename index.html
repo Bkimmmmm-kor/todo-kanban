@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <header class="top">
@@ -67,6 +67,7 @@
     <button id="importBtn">📥 백업 파일 가져오기</button>
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button data-action="close" class="muted">닫기</button>
+    <p class="sheet-desc">앱 버전 3</p>
   </dialog>
 
   <!-- 아카이브 -->
@@ -84,6 +85,6 @@
     <button id="toastUndo" class="text-btn" hidden>되돌리기</button>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
