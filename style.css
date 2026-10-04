@@ -97,31 +97,35 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 52px; height: 52px; border-radius: 12px; border: 0;
   background: var(--border); font-size: 1.5rem;
 }
-.mic-btn {
-  width: 72px; height: 72px; border-radius: 50%; border: 0;
-  background: var(--accent); color: #fff; font-size: 2rem;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, .4);
+.add-btn { background: var(--accent); color: #fff; }
+
+/* NEW 표시 */
+.new-badge {
+  display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 6px;
+  background: var(--danger); color: #fff; font-size: .72rem; font-weight: 800;
+  vertical-align: 2px; text-decoration: none;
+}
+.tab { position: relative; }
+.tab.has-new::after {
+  content: ''; position: absolute; top: 6px; right: 8px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
 }
 
-/* 음성 인식 오버레이 */
-.listening {
-  position: fixed; inset: 0; z-index: 20;
-  background: rgba(0, 0, 0, .82); color: #fff;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px;
-  padding: 24px;
+/* 아카이브 */
+.sheet.archive { max-height: 85vh; }
+.sheet-desc { margin: 0 0 8px; font-size: .85rem; color: var(--muted); }
+.archive-list { list-style: none; margin: 0; padding: 0; }
+.archive-list li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 0; border-top: 1px solid var(--border);
 }
-.listening[hidden] { display: none; }
-.pulse {
-  width: 120px; height: 120px; border-radius: 50%;
-  display: grid; place-items: center; font-size: 3rem;
-  background: var(--accent); animation: pulse 1.2s infinite;
+.archive-list .a-text { flex: 1; min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
+.archive-list .a-meta { display: block; font-size: .78rem; color: var(--muted); margin-top: 2px; }
+.sheet .archive-list button {
+  width: auto; flex: none; border: 0; padding: 10px 12px; font-size: 1.1rem;
 }
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(96, 165, 250, .7); }
-  100% { box-shadow: 0 0 0 36px rgba(96, 165, 250, 0); }
-}
-.interim { font-size: 1.5rem; text-align: center; min-height: 2em; margin: 0; word-break: keep-all; }
-.listening .text-btn { color: #fff; font-size: 1.1rem; }
+.archive-list:not(:empty) + .archive-empty { display: none; }
+.archive-list:empty ~ #archiveClearBtn { display: none; }
 
 /* 바텀 시트 */
 .sheet {
@@ -144,7 +148,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .cards:empty ~ #clearDoneBtn { display: none; }
 
 .toast {
-  position: fixed; left: 16px; right: 16px; bottom: calc(110px + env(safe-area-inset-bottom)); z-index: 10;
+  position: fixed; left: 16px; right: 16px; bottom: calc(90px + env(safe-area-inset-bottom)); z-index: 10;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: #111827; color: #fff; padding: 8px 8px 8px 16px; border-radius: 12px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, .3);

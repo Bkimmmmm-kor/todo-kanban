@@ -1,6 +1,9 @@
 'use strict';
 
 const STORAGE_KEY = 'kanban-tasks-v1';
+const ARCHIVE_KEY = 'kanban-archive-v1';
+const ARCHIVE_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const COLS = ['todo', 'doing', 'done'];
 const COL_NAMES = { todo: '할 일', doing: '진행 중', done: '완료' };
 const LONG_PRESS_MS = 500;
@@ -9,12 +12,13 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ---------- 저장소 ----------
-let tasks = load();
+let tasks = load(STORAGE_KEY);
+let archive = load(ARCHIVE_KEY);
 let activeCol = 'todo';
 
-function load() {
+function load(key) {
   try {
-    const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const data = JSON.parse(localStorage.getItem(key));
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
@@ -24,6 +28,7 @@ function load() {
 function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archive));
   } catch {
     showToast('저장에 실패했어요. 백업을 내보내 주세요.');
   }
@@ -31,6 +36,14 @@ function save() {
 
 function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// 보관 30일이 지난 아카이브 항목 삭제
+function purgeArchive() {
+  const limit = Date.now() - ARCHIVE_DAYS * DAY_MS;
+  const before = archive.length;
+  archive = archive.filter((t) => t.archivedAt > limit);
+  if (archive.length !== before) save();
 }
 
 // ---------- 조작 ----------
@@ -53,17 +66,17 @@ function addTask(text) {
 function moveTask(id, col) {
   const task = tasks.find((t) => t.id === id);
   if (!task || task.col === col) return;
-  const prev = { col: task.col, doneAt: task.doneAt };
+  const prev = { col: task.col, doneAt: task.doneAt, isNew: task.isNew };
   task.col = col;
   task.doneAt = col === 'done' ? Date.now() : null;
+  task.isNew = true; // 옮겨간 칸에서 NEW로 표시
   // 이동한 카드를 해당 열 맨 위로
   tasks = [task, ...tasks.filter((t) => t.id !== id)];
   save();
   render();
   vibrate(20);
   showToast(`${COL_NAMES[col]}(으)로 이동`, () => {
-    task.col = prev.col;
-    task.doneAt = prev.doneAt;
+    Object.assign(task, prev);
     save();
     render();
   });
@@ -92,15 +105,20 @@ function editTask(id) {
   render();
 }
 
+// 완료 항목을 아카이브로 이동
 function clearDone() {
   const done = tasks.filter((t) => t.col === 'done');
   if (!done.length) return;
-  const before = tasks.slice();
+  const prevTasks = tasks.slice();
+  const prevArchive = archive.slice();
+  const now = Date.now();
+  archive = [...done.map(({ isNew, ...t }) => ({ ...t, archivedAt: now })), ...archive];
   tasks = tasks.filter((t) => t.col !== 'done');
   save();
   render();
-  showToast(`완료 ${done.length}개 비움`, () => {
-    tasks = before;
+  showToast(`완료 ${done.length}개를 아카이브로 옮김`, () => {
+    tasks = prevTasks;
+    archive = prevArchive;
     save();
     render();
   });
@@ -121,7 +139,9 @@ function render() {
     const items = tasks.filter((t) => t.col === col);
     list.replaceChildren(...items.map(cardEl));
     $(`[data-count="${col}"]`).textContent = items.length;
+    $(`.tab[data-col="${col}"]`).classList.toggle('has-new', items.some((t) => t.isNew));
   }
+  $('#archiveCount').textContent = archive.length ? `(${archive.length})` : '';
 }
 
 function cardEl(task) {
@@ -129,7 +149,13 @@ function cardEl(task) {
   li.className = 'card';
   li.dataset.id = task.id;
   li.dataset.col = task.col;
-  li.textContent = task.text;
+  if (task.isNew) {
+    const badge = document.createElement('span');
+    badge.className = 'new-badge';
+    badge.textContent = 'NEW';
+    li.append(badge);
+  }
+  li.append(task.text);
   const meta = document.createElement('span');
   meta.className = 'meta';
   meta.textContent = task.col === 'done' && task.doneAt
@@ -140,6 +166,20 @@ function cardEl(task) {
 }
 
 function setActiveCol(col) {
+  // 보고 있던 칸을 떠나면 그 칸의 NEW 표시를 지움
+  if (col !== activeCol) {
+    let changed = false;
+    for (const t of tasks) {
+      if (t.col === activeCol && t.isNew) {
+        delete t.isNew;
+        changed = true;
+      }
+    }
+    if (changed) {
+      save();
+      render();
+    }
+  }
   activeCol = col;
   $$('.tab').forEach((tab) => tab.setAttribute('aria-selected', tab.dataset.col === col));
   $$('.column').forEach((c) => c.classList.toggle('active', c.dataset.col === col));
@@ -249,80 +289,65 @@ $('#addForm').addEventListener('submit', (e) => {
 
 $('#clearDoneBtn').addEventListener('click', clearDone);
 
-// ---------- 음성 입력 ----------
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const overlay = $('#listening');
-const interimEl = $('#interim');
-let recognition = null;
-let finalText = '';
-let cancelled = false;
-
-$('#micBtn').addEventListener('click', startListening);
-$('#stopListenBtn').addEventListener('click', () => {
-  cancelled = true;
-  recognition?.abort();
-  overlay.hidden = true;
-});
-
-function startListening() {
-  if (!SpeechRecognition) {
-    showToast('이 브라우저는 음성 인식을 지원하지 않아요. 크롬을 사용해 주세요.');
-    return;
-  }
-  recognition = new SpeechRecognition();
-  recognition.lang = 'ko-KR';
-  recognition.interimResults = true;
-  recognition.continuous = false;
-  recognition.maxAlternatives = 1;
-
-  finalText = '';
-  cancelled = false;
-  interimEl.textContent = '듣고 있어요…';
-  overlay.hidden = false;
-  vibrate(20);
-
-  recognition.onresult = (e) => {
-    let interim = '';
-    finalText = '';
-    for (const result of e.results) {
-      if (result.isFinal) finalText += result[0].transcript;
-      else interim += result[0].transcript;
-    }
-    interimEl.textContent = (finalText + interim) || '듣고 있어요…';
-  };
-
-  recognition.onerror = (e) => {
-    overlay.hidden = true;
-    const messages = {
-      'not-allowed': '마이크 권한이 필요해요. 브라우저 설정에서 허용해 주세요.',
-      'service-not-allowed': '마이크 권한이 필요해요. 브라우저 설정에서 허용해 주세요.',
-      'network': '음성 인식은 인터넷 연결이 필요해요.',
-      'no-speech': '말소리가 들리지 않았어요. 다시 눌러 주세요.',
-    };
-    if (e.error !== 'aborted') showToast(messages[e.error] || `음성 인식 오류: ${e.error}`);
-  };
-
-  recognition.onend = () => {
-    overlay.hidden = true;
-    if (!cancelled && finalText.trim()) addTask(finalText);
-  };
-
-  try {
-    recognition.start();
-  } catch {
-    overlay.hidden = true;
-  }
-}
-
-// ---------- 백업 ----------
+// ---------- 설정 ----------
 const settings = $('#settings');
 $('#settingsBtn').addEventListener('click', () => settings.showModal());
 settings.addEventListener('click', (e) => {
   if (e.target === settings || e.target.dataset.action === 'close') settings.close();
 });
 
+// ---------- 아카이브 ----------
+const archiveDialog = $('#archive');
+
+function renderArchive() {
+  const now = Date.now();
+  $('#archiveList').replaceChildren(...archive.map((t) => {
+    const li = document.createElement('li');
+    const text = document.createElement('div');
+    text.className = 'a-text';
+    text.textContent = t.text;
+    const meta = document.createElement('span');
+    meta.className = 'a-meta';
+    const daysLeft = Math.max(1, Math.ceil((t.archivedAt + ARCHIVE_DAYS * DAY_MS - now) / DAY_MS));
+    meta.textContent = `완료 ${formatTime(t.doneAt || t.archivedAt)} · ${daysLeft}일 후 삭제`;
+    text.append(meta);
+    const del = document.createElement('button');
+    del.textContent = '🗑️';
+    del.setAttribute('aria-label', '삭제');
+    del.dataset.id = t.id;
+    li.append(text, del);
+    return li;
+  }));
+}
+
+$('#archiveBtn').addEventListener('click', () => {
+  purgeArchive();
+  renderArchive();
+  settings.close();
+  archiveDialog.showModal();
+});
+
+archiveDialog.addEventListener('click', (e) => {
+  if (e.target === archiveDialog || e.target.dataset.action === 'close') return archiveDialog.close();
+  const id = e.target.closest('.archive-list button')?.dataset.id;
+  if (!id) return;
+  archive = archive.filter((t) => t.id !== id);
+  save();
+  render();
+  renderArchive();
+});
+
+$('#archiveClearBtn').addEventListener('click', () => {
+  if (!confirm(`아카이브 ${archive.length}개를 모두 삭제할까요? 되돌릴 수 없어요.`)) return;
+  archive = [];
+  save();
+  render();
+  renderArchive();
+});
+
+// ---------- 백업 ----------
 $('#exportBtn').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(tasks, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ tasks, archive }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   const d = new Date();
   a.href = URL.createObjectURL(blob);
@@ -339,10 +364,17 @@ $('#importFile').addEventListener('change', async (e) => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    const valid = Array.isArray(data) && data.every((t) => t && t.id && typeof t.text === 'string' && COLS.includes(t.col));
+    // 예전 백업(할일 배열만)도 받음
+    const newTasks = Array.isArray(data) ? data : data.tasks;
+    const newArchive = Array.isArray(data) ? [] : (data.archive || []);
+    const isTask = (t) => t && t.id && typeof t.text === 'string';
+    const valid = Array.isArray(newTasks) && newTasks.every((t) => isTask(t) && COLS.includes(t.col))
+      && Array.isArray(newArchive) && newArchive.every((t) => isTask(t) && t.archivedAt);
     if (!valid) throw new Error('invalid');
-    if (!confirm(`백업의 할 일 ${data.length}개로 현재 목록(${tasks.length}개)을 바꿀까요?`)) return;
-    tasks = data;
+    if (!confirm(`백업의 할 일 ${newTasks.length}개(아카이브 ${newArchive.length}개)로 현재 목록을 바꿀까요?`)) return;
+    tasks = newTasks;
+    archive = newArchive;
+    purgeArchive();
     save();
     render();
     settings.close();
@@ -353,6 +385,7 @@ $('#importFile').addEventListener('change', async (e) => {
 });
 
 // ---------- 시작 ----------
+purgeArchive();
 setActiveCol(activeCol);
 render();
 

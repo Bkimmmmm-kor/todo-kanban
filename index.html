@@ -26,7 +26,7 @@
     <section class="column" data-col="todo">
       <h2>할 일</h2>
       <ul class="cards" data-list="todo"></ul>
-      <p class="empty">할 일이 없어요. 🎤 버튼을 눌러 말해보세요.</p>
+      <p class="empty">할 일이 없어요. 아래 입력창에 적어보세요.</p>
     </section>
     <section class="column" data-col="doing">
       <h2>진행 중</h2>
@@ -37,7 +37,7 @@
       <h2>완료</h2>
       <ul class="cards" data-list="done"></ul>
       <p class="empty">완료한 일이 없어요.</p>
-      <button id="clearDoneBtn" class="text-btn danger">완료 항목 비우기</button>
+      <button id="clearDoneBtn" class="text-btn">완료 항목 비우기 (아카이브로 이동)</button>
     </section>
   </main>
 
@@ -46,15 +46,7 @@
   <form id="addForm" class="composer" autocomplete="off">
     <input id="taskInput" type="text" placeholder="할 일 입력" enterkeyhint="done">
     <button type="submit" class="add-btn" aria-label="추가">＋</button>
-    <button type="button" id="micBtn" class="mic-btn" aria-label="음성으로 입력">🎤</button>
   </form>
-
-  <!-- 음성 인식 중 오버레이 -->
-  <div id="listening" class="listening" hidden>
-    <div class="pulse">🎤</div>
-    <p id="interim" class="interim">듣고 있어요…</p>
-    <button id="stopListenBtn" class="text-btn">취소</button>
-  </div>
 
   <!-- 카드 메뉴 -->
   <dialog id="cardMenu" class="sheet">
@@ -70,9 +62,20 @@
   <!-- 설정 -->
   <dialog id="settings" class="sheet">
     <p class="sheet-title">설정 · 백업</p>
+    <button id="archiveBtn">🗄️ 아카이브 <span id="archiveCount" class="muted"></span></button>
     <button id="exportBtn">📤 백업 파일로 내보내기</button>
     <button id="importBtn">📥 백업 파일 가져오기</button>
     <input id="importFile" type="file" accept="application/json,.json" hidden>
+    <button data-action="close" class="muted">닫기</button>
+  </dialog>
+
+  <!-- 아카이브 -->
+  <dialog id="archive" class="sheet archive">
+    <p class="sheet-title">아카이브</p>
+    <p class="sheet-desc">완료 후 비운 항목이에요. 30일이 지나면 자동으로 삭제돼요.</p>
+    <ul id="archiveList" class="archive-list"></ul>
+    <p class="empty archive-empty">아카이브가 비어 있어요.</p>
+    <button id="archiveClearBtn" class="danger">🗑️ 아카이브 전체 삭제</button>
     <button data-action="close" class="muted">닫기</button>
   </dialog>
 
