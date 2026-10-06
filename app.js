@@ -1,7 +1,15 @@
 'use strict';
 
-const STORAGE_KEY = 'kanban-tasks-v1';
-const ARCHIVE_KEY = 'kanban-archive-v1';
+// 서버(Supabase) 연결 정보. publishable 키는 공개용이며, 데이터는 DB 보안 규칙(RLS)으로 본인 것만 접근 가능
+const SUPABASE_URL = 'https://ggukxzqsvlmfaxefazjc.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_j_wtAX2FkiL4CkoB78jA3Q_otkyQPzG';
+const APP_URL = location.origin + location.pathname;
+
+// 계정 연결 전(버전 4까지) 이 기기에만 저장하던 데이터
+const LEGACY_TASKS_KEY = 'kanban-tasks-v1';
+const LEGACY_ARCHIVE_KEY = 'kanban-archive-v1';
+const LEGACY_DONE_KEY = 'kanban-legacy-migrated';
+
 const ARCHIVE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COLS = ['todo', 'doing', 'done'];
@@ -11,31 +19,189 @@ const LONG_PRESS_MS = 500;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-// ---------- 저장소 ----------
-let tasks = load(STORAGE_KEY);
-let archive = load(ARCHIVE_KEY);
+const sb = window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    // implicit: PC에서 가입하고 폰에서 확인 메일을 눌러도 동작
+    auth: { flowType: 'implicit', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  })
+  : null;
+
+// ---------- 상태 ----------
+let user = null;
+let tasks = [];
+let archive = [];
+let synced = new Map(); // id → 서버에 저장된 마지막 내용(JSON)
 let activeCol = 'todo';
-
-function load(key) {
-  try {
-    const data = JSON.parse(localStorage.getItem(key));
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
-
-function save() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archive));
-  } catch {
-    showToast('저장에 실패했어요. 백업을 내보내 주세요.');
-  }
-}
 
 function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+const toIso = (ms) => (ms ? new Date(ms).toISOString() : null);
+const toMs = (iso) => (iso ? Date.parse(iso) : null);
+
+function toRow(t) {
+  return {
+    id: t.id,
+    text: t.text,
+    clinic: t.clinic || null,
+    due: t.due || null,
+    col: t.col,
+    is_new: !!t.isNew,
+    created_at: toIso(t.createdAt),
+    moved_at: toIso(t.movedAt || t.createdAt),
+    done_at: toIso(t.doneAt),
+    archived_at: toIso(t.archivedAt),
+  };
+}
+
+function fromRow(r) {
+  const t = { id: r.id, text: r.text, col: r.col, createdAt: toMs(r.created_at), movedAt: toMs(r.moved_at), doneAt: toMs(r.done_at) };
+  if (r.clinic) t.clinic = r.clinic;
+  if (r.due) t.due = r.due;
+  if (r.is_new) t.isNew = true;
+  if (r.archived_at) t.archivedAt = toMs(r.archived_at);
+  return t;
+}
+
+const byNewest = (key) => (a, b) => (b[key] || b.createdAt) - (a[key] || a.createdAt);
+
+// ---------- 저장 / 동기화 ----------
+// 화면에서 바꾼 내용은 save() → 기기 캐시에 바로 저장 → 서버와 다른 부분만 서버로 전송
+function save() {
+  saveCache();
+  return queuePush();
+}
+
+const cacheKey = () => `kanban-cache-${user.id}`;
+
+function saveCache() {
+  if (!user) return;
+  try {
+    localStorage.setItem(cacheKey(), JSON.stringify({ tasks, archive, synced: [...synced] }));
+  } catch { /* 저장 공간 부족 등: 서버 저장은 계속됨 */ }
+}
+
+function loadCache() {
+  try {
+    const data = JSON.parse(localStorage.getItem(cacheKey()));
+    if (!data) return;
+    tasks = data.tasks || [];
+    archive = data.archive || [];
+    synced = new Map(data.synced || []);
+  } catch { /* 캐시가 깨졌으면 서버에서 다시 받음 */ }
+}
+
+function pendingChanges() {
+  const current = new Map([...tasks, ...archive].map((t) => [t.id, JSON.stringify(toRow(t))]));
+  const upserts = [...current].filter(([id, json]) => synced.get(id) !== json);
+  const deletes = [...synced.keys()].filter((id) => !current.has(id));
+  return { upserts, deletes };
+}
+
+let pushChain = Promise.resolve(true);
+function queuePush() {
+  pushChain = pushChain.then(push, push);
+  return pushChain;
+}
+
+async function push() {
+  if (!user || !sb) return false;
+  const { upserts, deletes } = pendingChanges();
+  if (!upserts.length && !deletes.length) return true;
+  setSync('saving');
+  try {
+    if (upserts.length) {
+      const { error } = await sb.from('tasks').upsert(upserts.map(([, json]) => JSON.parse(json)));
+      if (error) throw error;
+      upserts.forEach(([id, json]) => synced.set(id, json));
+    }
+    if (deletes.length) {
+      const { error } = await sb.from('tasks').delete().in('id', deletes);
+      if (error) throw error;
+      deletes.forEach((id) => synced.delete(id));
+    }
+    saveCache();
+    setSync('ok');
+    return true;
+  } catch (err) {
+    console.error('[sync] push', err);
+    setSync('offline');
+    return false;
+  }
+}
+
+// 서버에서 최신 내용 받기 (보내지 못한 변경이 있으면 먼저 보냄)
+let pulling = false;
+let pullAgain = false;
+async function pull() {
+  if (!user || !sb) return;
+  if (pulling) {
+    pullAgain = true; // 받는 중에 또 바뀌었으면 끝난 뒤 한 번 더
+    return;
+  }
+  pulling = true;
+  pullAgain = false;
+  try {
+    if (!(await queuePush())) return;
+    const { data, error } = await sb.from('tasks').select('*');
+    if (error) throw error;
+    const { upserts, deletes } = pendingChanges();
+    if (upserts.length || deletes.length) return; // 받는 사이에 화면에서 바뀜 → 다음 동기화 때 반영
+    const rows = data.map(fromRow);
+    tasks = rows.filter((t) => !t.archivedAt).sort(byNewest('movedAt'));
+    archive = rows.filter((t) => t.archivedAt).sort(byNewest('archivedAt'));
+    synced = new Map(data.map((r) => [r.id, JSON.stringify(toRow(fromRow(r)))]));
+    saveCache();
+    render();
+    setSync('ok');
+    purgeArchive();
+    await offerLegacyMigration();
+  } catch (err) {
+    console.error('[sync] pull', err);
+    setSync('offline');
+  } finally {
+    pulling = false;
+    if (pullAgain) schedulePull();
+  }
+}
+
+let pullTimer;
+function schedulePull(delay = 400) {
+  clearTimeout(pullTimer);
+  pullTimer = setTimeout(pull, delay);
+}
+
+function setSync(state) {
+  const el = $('#syncStatus');
+  el.textContent = { ok: '✓ 동기화됨', saving: '저장 중…', offline: '⚠ 오프라인' }[state] || '';
+  el.classList.toggle('warn', state === 'offline');
+}
+
+// 계정 연결 전에 이 기기에 저장해 둔 할일을 계정으로 옮기기 (한 번만 물어봄)
+async function offerLegacyMigration() {
+  if (localStorage.getItem(LEGACY_DONE_KEY)) return;
+  const read = (key) => {
+    try {
+      const v = JSON.parse(localStorage.getItem(key));
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  };
+  const known = new Set([...tasks, ...archive].map((t) => t.id));
+  const oldTasks = read(LEGACY_TASKS_KEY).filter((t) => t && t.id && !known.has(t.id));
+  const oldArchive = read(LEGACY_ARCHIVE_KEY).filter((t) => t && t.id && !known.has(t.id));
+  if (!oldTasks.length && !oldArchive.length) return;
+  localStorage.setItem(LEGACY_DONE_KEY, '1');
+  const n = oldTasks.length + oldArchive.length;
+  if (!confirm(`이 기기에 저장된 할일 ${n}개가 있어요. 내 계정으로 옮길까요?`)) return;
+  tasks = [...oldTasks, ...tasks].sort(byNewest('movedAt'));
+  archive = [...oldArchive, ...archive].sort(byNewest('archivedAt'));
+  purgeArchive();
+  render();
+  await save();
+  showToast(`할일 ${n}개를 계정으로 옮겼어요.`);
 }
 
 // 보관 30일이 지난 아카이브 항목 삭제
@@ -43,14 +209,18 @@ function purgeArchive() {
   const limit = Date.now() - ARCHIVE_DAYS * DAY_MS;
   const before = archive.length;
   archive = archive.filter((t) => t.archivedAt > limit);
-  if (archive.length !== before) save();
+  if (archive.length !== before) {
+    render();
+    save();
+  }
 }
 
 // ---------- 조작 ----------
 function addTask(text, clinic = '', due = '') {
   text = text.trim();
   if (!text) return false;
-  const task = { id: newId(), text, col: 'todo', createdAt: Date.now(), doneAt: null };
+  const now = Date.now();
+  const task = { id: newId(), text, col: 'todo', createdAt: now, movedAt: now, doneAt: null };
   if (clinic.trim()) task.clinic = clinic.trim();
   if (due) task.due = due; // 'YYYY-MM-DD'
   tasks.unshift(task);
@@ -69,9 +239,10 @@ function addTask(text, clinic = '', due = '') {
 function moveTask(id, col) {
   const task = tasks.find((t) => t.id === id);
   if (!task || task.col === col) return;
-  const prev = { col: task.col, doneAt: task.doneAt, isNew: task.isNew };
+  const prev = { col: task.col, doneAt: task.doneAt, isNew: task.isNew, movedAt: task.movedAt };
   task.col = col;
-  task.doneAt = col === 'done' ? Date.now() : null;
+  task.movedAt = Date.now();
+  task.doneAt = col === 'done' ? task.movedAt : null;
   task.isNew = true; // 옮겨간 칸에서 NEW로 표시
   // 이동한 카드를 해당 열 맨 위로
   tasks = [task, ...tasks.filter((t) => t.id !== id)];
@@ -80,6 +251,7 @@ function moveTask(id, col) {
   vibrate(20);
   showToast(`${COL_NAMES[col]}(으)로 이동`, () => {
     Object.assign(task, prev);
+    tasks.sort(byNewest('movedAt'));
     save();
     render();
   });
@@ -358,7 +530,18 @@ $('#clearDoneBtn').addEventListener('click', clearDone);
 
 // ---------- 설정 ----------
 const settings = $('#settings');
-$('#settingsBtn').addEventListener('click', () => settings.showModal());
+$('#settingsBtn').addEventListener('click', () => {
+  $('#accountEmail').textContent = user ? `로그인: ${user.email}` : '';
+  settings.showModal();
+});
+
+$('#logoutBtn').addEventListener('click', async () => {
+  const { upserts, deletes } = pendingChanges();
+  if ((upserts.length || deletes.length) && !(await queuePush())
+    && !confirm('아직 서버에 저장되지 않은 변경이 있어요. 그래도 로그아웃할까요?')) return;
+  settings.close();
+  await sb.auth.signOut();
+});
 settings.addEventListener('click', (e) => {
   if (e.target === settings || e.target.dataset.action === 'close') settings.close();
 });
@@ -451,10 +634,117 @@ $('#importFile').addEventListener('change', async (e) => {
   }
 });
 
+// ---------- 로그인 ----------
+const authScreen = $('#authScreen');
+const authMsg = $('#authMsg');
+
+function setAuthMsg(text, isError = false) {
+  authMsg.textContent = text;
+  authMsg.classList.toggle('error', isError);
+}
+
+const AUTH_ERRORS = {
+  'Invalid login credentials': '이메일 또는 비밀번호가 맞지 않아요.',
+  'Email not confirmed': '메일함에서 가입 확인 링크를 먼저 눌러 주세요.',
+  'User already registered': '이미 가입된 이메일이에요. 로그인해 주세요.',
+};
+const authError = (err) => AUTH_ERRORS[err.message] || (err.status === 429
+  ? '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.'
+  : `오류: ${err.message}`);
+
+$('#authForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!sb) return setAuthMsg('서버에 연결할 수 없어요. 인터넷을 확인해 주세요.', true);
+  const mode = e.submitter?.dataset.mode || 'login';
+  const email = $('#authEmail').value.trim();
+  const password = $('#authPassword').value;
+  const buttons = $$('#authForm button');
+  buttons.forEach((b) => (b.disabled = true));
+  setAuthMsg(mode === 'signup' ? '가입 중…' : '로그인 중…');
+  try {
+    if (mode === 'signup') {
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: APP_URL } });
+      if (error) throw error;
+      if (data.user && !data.user.identities?.length) {
+        setAuthMsg('이미 가입된 이메일이에요. 로그인해 주세요.', true);
+      } else if (!data.session) {
+        setAuthMsg(`${email} 로 확인 메일을 보냈어요. 메일의 링크를 누르면 가입이 끝나요.`);
+      }
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      setAuthMsg('');
+    }
+  } catch (err) {
+    setAuthMsg(authError(err), true);
+  } finally {
+    buttons.forEach((b) => (b.disabled = false));
+  }
+});
+
+$('#resetPwBtn').addEventListener('click', async () => {
+  const email = $('#authEmail').value.trim();
+  if (!email) return setAuthMsg('이메일을 먼저 입력해 주세요.', true);
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: APP_URL });
+  setAuthMsg(error ? authError(error) : `${email} 로 비밀번호 재설정 메일을 보냈어요.`, !!error);
+});
+
+let channel = null;
+let authReady = false;
+
+function setUser(u) {
+  if (authReady && u?.id === user?.id) return; // 토큰 갱신 등 같은 사용자
+  authReady = true;
+  if (channel) {
+    sb.removeChannel(channel);
+    channel = null;
+  }
+  user = u;
+  tasks = [];
+  archive = [];
+  synced = new Map();
+  setSync('');
+  authScreen.hidden = !!user;
+  if (!user) {
+    render();
+    return;
+  }
+  loadCache();
+  render();
+  // 다른 기기에서 바꾸면 바로 다시 받기
+  channel = sb.channel(`tasks-${user.id}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${user.id}` }, () => schedulePull())
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tasks' }, () => schedulePull())
+    .subscribe();
+  pull();
+}
+
 // ---------- 시작 ----------
-purgeArchive();
 setActiveCol(activeCol);
 render();
+
+if (sb) {
+  sb.auth.onAuthStateChange((event, session) => {
+    // 이 콜백 안에서 바로 서버를 호출하면 멈출 수 있어 다음 차례로 미룸
+    setTimeout(async () => {
+      if (event === 'PASSWORD_RECOVERY') {
+        const pw = prompt('새 비밀번호를 입력해 주세요 (6자 이상)');
+        if (pw) {
+          const { error } = await sb.auth.updateUser({ password: pw });
+          showToast(error ? authError(error) : '비밀번호를 바꿨어요.');
+        }
+      }
+      setUser(session?.user ?? null);
+    }, 0);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') schedulePull(0);
+  });
+  window.addEventListener('online', () => schedulePull(0));
+} else {
+  authScreen.hidden = false;
+  setAuthMsg('서버에 연결할 수 없어요. 인터넷 연결을 확인한 뒤 앱을 다시 열어 주세요.', true);
+}
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   // 새 버전이 설치되면 한 번 새로고침해서 바로 적용

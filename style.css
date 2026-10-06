@@ -42,6 +42,34 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .top h1 { font-size: 1.35rem; margin: 0; }
 .icon-btn { background: none; border: 0; font-size: 1.4rem; padding: 8px; }
+.top h1 { flex: 1; }
+.sync { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.sync.warn { color: var(--danger); font-weight: 600; }
+
+/* 로그인 화면 */
+.auth {
+  position: fixed; inset: 0; z-index: 30; background: var(--bg);
+  display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+  overflow-y: auto;
+}
+.auth[hidden] { display: none; }
+.auth-box { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; text-align: center; }
+.auth-box img { align-self: center; border-radius: 18px; }
+.auth-box h2 { margin: 4px 0 0; }
+.auth-desc { margin: 0 0 8px; color: var(--muted); font-size: .9rem; word-break: keep-all; }
+.auth-box input {
+  height: 52px; padding: 0 14px; font-size: 1.05rem;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.auth-box .primary, .auth-box .secondary {
+  height: 52px; border-radius: 12px; font-size: 1.05rem; font-weight: 700;
+  border: 1px solid var(--accent);
+}
+.auth-box .primary { background: var(--accent); color: #fff; }
+.auth-box .secondary { background: none; color: var(--accent); }
+.auth-box button:disabled { opacity: .5; }
+.auth-msg { min-height: 1.4em; margin: 4px 0 0; font-size: .9rem; word-break: keep-all; }
+.auth-msg.error { color: var(--danger); }
 
 /* 탭 (폰 세로 화면) */
 .tabs { display: flex; gap: 8px; padding: 8px 16px; }

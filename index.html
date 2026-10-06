@@ -8,13 +8,29 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <header class="top">
     <h1>할일 보드</h1>
+    <span id="syncStatus" class="sync"></span>
     <button id="settingsBtn" class="icon-btn" aria-label="설정">⚙️</button>
   </header>
+
+  <!-- 로그인 -->
+  <section id="authScreen" class="auth" hidden>
+    <form id="authForm" class="auth-box" autocomplete="on">
+      <img src="icon-192.png" alt="" width="72" height="72">
+      <h2>할일 보드</h2>
+      <p class="auth-desc">계정으로 로그인하면 폰·태블릿·PC 어디서든 같은 할일을 볼 수 있어요.</p>
+      <input id="authEmail" type="email" placeholder="이메일" autocomplete="email" required>
+      <input id="authPassword" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password" minlength="6" required>
+      <button type="submit" class="primary" data-mode="login">로그인</button>
+      <button type="submit" class="secondary" data-mode="signup">처음이에요 · 회원가입</button>
+      <button type="button" id="resetPwBtn" class="text-btn">비밀번호를 잊었어요</button>
+      <p id="authMsg" class="auth-msg" role="status"></p>
+    </form>
+  </section>
 
   <nav class="tabs" role="tablist">
     <button class="tab" data-col="todo" role="tab">할 일 <span class="count" data-count="todo">0</span></button>
@@ -86,12 +102,14 @@
   <!-- 설정 -->
   <dialog id="settings" class="sheet">
     <p class="sheet-title">설정 · 백업</p>
+    <p id="accountEmail" class="sheet-desc"></p>
     <button id="archiveBtn">🗄️ 아카이브 <span id="archiveCount" class="muted"></span></button>
     <button id="exportBtn">📤 백업 파일로 내보내기</button>
     <button id="importBtn">📥 백업 파일 가져오기</button>
     <input id="importFile" type="file" accept="application/json,.json" hidden>
+    <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 4</p>
+    <p class="sheet-desc">앱 버전 5</p>
   </dialog>
 
   <!-- 아카이브 -->
@@ -109,6 +127,7 @@
     <button id="toastUndo" class="text-btn" hidden>되돌리기</button>
   </div>
 
-  <script src="app.js?v=4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
