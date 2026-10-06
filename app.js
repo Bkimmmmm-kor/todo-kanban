@@ -523,8 +523,30 @@ $('#addForm').addEventListener('submit', (e) => {
   }
   input.value = '';
   $('#clinicInput').value = '';
-  $('#dueInput').value = '';
+  setDue('');
 });
+
+// 납기일 버튼: 누르면 달력, 고르면 버튼에 날짜 표시
+const dueInput = $('#dueInput');
+const dueBtn = $('#dueBtn');
+
+function setDue(value) {
+  dueInput.value = value;
+  dueBtn.textContent = value ? `📅 ${dueLabel(value).text.replace('납기 ', '')}` : '📅 납기일';
+  dueBtn.classList.toggle('set', !!value);
+  $('#dueClear').hidden = !value;
+}
+
+dueBtn.addEventListener('click', () => {
+  try {
+    dueInput.showPicker();
+  } catch {
+    dueInput.focus();
+    dueInput.click();
+  }
+});
+dueInput.addEventListener('change', () => setDue(dueInput.value));
+$('#dueClear').addEventListener('click', () => setDue(''));
 
 $('#clearDoneBtn').addEventListener('click', clearDone);
 

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <header class="top">
@@ -62,14 +62,17 @@
   <form id="addForm" class="composer" autocomplete="off">
     <div class="composer-extra">
       <input id="clinicInput" type="text" placeholder="치과명 (선택)" list="clinicList" enterkeyhint="next">
-      <label class="due-field">
-        <span>납기일</span>
-        <input id="dueInput" type="date">
-      </label>
+      <div class="due-wrap">
+        <button type="button" id="dueBtn" class="due-btn">📅 납기일</button>
+        <button type="button" id="dueClear" class="due-clear" aria-label="납기일 지우기" hidden>✕</button>
+        <!-- 달력은 이 칸이 띄움 (화면에는 안 보임) -->
+        <input id="dueInput" type="date" tabindex="-1" aria-hidden="true">
+      </div>
     </div>
     <div class="composer-main">
-      <input id="taskInput" type="text" placeholder="할 일 입력" enterkeyhint="done">
-      <button type="submit" class="add-btn" aria-label="추가">＋</button>
+      <input id="taskInput" type="text" placeholder="할 일 입력 후 키보드의 완료" enterkeyhint="done">
+      <!-- 키보드 '완료'로 추가되도록 남겨 둔 숨은 버튼 -->
+      <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">추가</button>
     </div>
   </form>
   <datalist id="clinicList"></datalist>
@@ -109,7 +112,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 5</p>
+    <p class="sheet-desc">앱 버전 6</p>
   </dialog>
 
   <!-- 아카이브 -->
@@ -128,6 +131,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

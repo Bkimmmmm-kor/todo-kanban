@@ -123,11 +123,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
 .composer-extra input { height: 42px; font-size: .95rem; }
-.due-field {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
-  font-size: .85rem; color: var(--muted); white-space: nowrap;
+.due-wrap { position: relative; flex: none; display: flex; align-items: center; }
+.due-btn {
+  height: 42px; padding: 0 14px; border-radius: 12px; white-space: nowrap;
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-size: .95rem;
 }
-.due-field input { padding: 0 8px; color-scheme: light dark; }
+.due-btn.set { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.due-clear {
+  height: 42px; width: 36px; margin-left: -4px; border: 0; background: none;
+  color: var(--muted); font-size: 1rem;
+}
+.due-clear[hidden] { display: none; }
+/* 달력을 띄우는 실제 날짜 칸: 버튼 아래에 투명하게 겹쳐 둠 */
+.due-wrap input[type="date"] {
+  position: absolute; left: 0; bottom: 0; width: 100%; height: 100%;
+  opacity: 0; pointer-events: none; border: 0; padding: 0;
+}
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); border: 0;
+}
 
 /* 카드의 치과명 / 납기일 */
 .card .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; text-decoration: none; }
@@ -149,11 +164,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
 .sheet .edit-actions button { flex: 1; text-align: center; border: 1px solid var(--border); border-radius: 10px; }
 .sheet .edit-actions .primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
-.add-btn {
-  width: 52px; height: 52px; border-radius: 12px; border: 0;
-  background: var(--border); font-size: 1.5rem;
-}
-.add-btn { background: var(--accent); color: #fff; }
 
 /* NEW 표시 */
 .new-badge {
