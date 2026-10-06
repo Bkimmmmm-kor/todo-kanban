@@ -1,6 +1,6 @@
-// 항상 서버에 최신 파일이 있는지 확인하고, 오프라인일 때만 캐시를 씁니다.
+﻿// 항상 서버에 최신 파일이 있는지 확인하고, 오프라인일 때만 캐시를 씁니다.
 // 앱을 수정해서 올릴 때마다 VERSION을 올려 주세요(폰이 새 버전을 바로 받음).
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = `kanban-${VERSION}`;
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 

@@ -85,14 +85,42 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* 하단 입력창 */
 .composer {
-  display: flex; gap: 8px; align-items: center;
+  display: flex; flex-direction: column; gap: 8px;
   padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
   background: var(--surface); border-top: 1px solid var(--border);
 }
+.composer-extra, .composer-main { display: flex; gap: 8px; align-items: center; }
 .composer input {
   flex: 1; min-width: 0; height: 52px; padding: 0 14px; font-size: 1.05rem;
   border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
+.composer-extra input { height: 42px; font-size: .95rem; }
+.due-field {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
+  font-size: .85rem; color: var(--muted); white-space: nowrap;
+}
+.due-field input { padding: 0 8px; color-scheme: light dark; }
+
+/* 카드의 치과명 / 납기일 */
+.card .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; text-decoration: none; }
+.tag {
+  display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: .8rem; font-weight: 600;
+  background: var(--border); color: var(--text);
+}
+.tag.due-soon { background: #fef3c7; color: #92400e; }
+.tag.due-over { background: var(--danger); color: #fff; }
+.card[data-col="done"] .tag { background: var(--border); color: var(--muted); }
+
+/* 수정 화면 */
+.edit-form label { display: block; margin: 10px 0; font-size: .85rem; color: var(--muted); }
+.edit-form input, .edit-form textarea {
+  display: block; width: 100%; margin-top: 4px; padding: 12px; font: inherit; font-size: 1.05rem;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  color-scheme: light dark;
+}
+.edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+.sheet .edit-actions button { flex: 1; text-align: center; border: 1px solid var(--border); border-radius: 10px; }
+.sheet .edit-actions .primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
 .add-btn {
   width: 52px; height: 52px; border-radius: 12px; border: 0;
   background: var(--border); font-size: 1.5rem;
@@ -148,7 +176,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .cards:empty ~ #clearDoneBtn { display: none; }
 
 .toast {
-  position: fixed; left: 16px; right: 16px; bottom: calc(90px + env(safe-area-inset-bottom)); z-index: 10;
+  position: fixed; left: 16px; right: 16px; bottom: calc(140px + env(safe-area-inset-bottom)); z-index: 10;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: #111827; color: #fff; padding: 8px 8px 8px 16px; border-radius: 12px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, .3);

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <header class="top">
@@ -44,9 +44,19 @@
   <p class="hint">탭: 다음 단계로 · 길게 누르기: 수정/삭제</p>
 
   <form id="addForm" class="composer" autocomplete="off">
-    <input id="taskInput" type="text" placeholder="할 일 입력" enterkeyhint="done">
-    <button type="submit" class="add-btn" aria-label="추가">＋</button>
+    <div class="composer-extra">
+      <input id="clinicInput" type="text" placeholder="치과명 (선택)" list="clinicList" enterkeyhint="next">
+      <label class="due-field">
+        <span>납기일</span>
+        <input id="dueInput" type="date">
+      </label>
+    </div>
+    <div class="composer-main">
+      <input id="taskInput" type="text" placeholder="할 일 입력" enterkeyhint="done">
+      <button type="submit" class="add-btn" aria-label="추가">＋</button>
+    </div>
   </form>
+  <datalist id="clinicList"></datalist>
 
   <!-- 카드 메뉴 -->
   <dialog id="cardMenu" class="sheet">
@@ -59,6 +69,20 @@
     <button data-action="close" class="muted">닫기</button>
   </dialog>
 
+  <!-- 수정 -->
+  <dialog id="editDialog" class="sheet">
+    <form id="editForm" method="dialog" class="edit-form" autocomplete="off">
+      <p class="sheet-title">할 일 수정</p>
+      <label>치과명<input id="editClinic" type="text" list="clinicList" placeholder="선택"></label>
+      <label>납기일<input id="editDue" type="date"></label>
+      <label>내용<textarea id="editText" rows="3" required></textarea></label>
+      <div class="edit-actions">
+        <button type="button" data-action="close" class="muted">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- 설정 -->
   <dialog id="settings" class="sheet">
     <p class="sheet-title">설정 · 백업</p>
@@ -67,7 +91,7 @@
     <button id="importBtn">📥 백업 파일 가져오기</button>
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 3</p>
+    <p class="sheet-desc">앱 버전 4</p>
   </dialog>
 
   <!-- 아카이브 -->
@@ -85,6 +109,6 @@
     <button id="toastUndo" class="text-btn" hidden>되돌리기</button>
   </div>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

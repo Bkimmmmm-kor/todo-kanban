@@ -47,10 +47,12 @@ function purgeArchive() {
 }
 
 // ---------- 조작 ----------
-function addTask(text) {
+function addTask(text, clinic = '', due = '') {
   text = text.trim();
-  if (!text) return;
+  if (!text) return false;
   const task = { id: newId(), text, col: 'todo', createdAt: Date.now(), doneAt: null };
+  if (clinic.trim()) task.clinic = clinic.trim();
+  if (due) task.due = due; // 'YYYY-MM-DD'
   tasks.unshift(task);
   save();
   setActiveCol('todo');
@@ -61,6 +63,7 @@ function addTask(text) {
     save();
     render();
   });
+  return true;
 }
 
 function moveTask(id, col) {
@@ -95,15 +98,35 @@ function deleteTask(id) {
   });
 }
 
+const editDialog = $('#editDialog');
+let editTaskId = null;
+
 function editTask(id) {
   const task = tasks.find((t) => t.id === id);
   if (!task) return;
-  const text = prompt('할 일 수정', task.text);
-  if (text === null || !text.trim()) return;
-  task.text = text.trim();
+  editTaskId = id;
+  $('#editClinic').value = task.clinic || '';
+  $('#editDue').value = task.due || '';
+  $('#editText').value = task.text;
+  editDialog.showModal();
+}
+
+$('#editForm').addEventListener('submit', (e) => {
+  const task = tasks.find((t) => t.id === editTaskId);
+  const text = $('#editText').value.trim();
+  if (!task || !text) return;
+  task.text = text;
+  const clinic = $('#editClinic').value.trim();
+  const due = $('#editDue').value;
+  if (clinic) task.clinic = clinic; else delete task.clinic;
+  if (due) task.due = due; else delete task.due;
   save();
   render();
-}
+});
+
+editDialog.addEventListener('click', (e) => {
+  if (e.target === editDialog || e.target.dataset.action === 'close') editDialog.close();
+});
 
 // 완료 항목을 아카이브로 이동
 function clearDone() {
@@ -142,6 +165,34 @@ function render() {
     $(`.tab[data-col="${col}"]`).classList.toggle('has-new', items.some((t) => t.isNew));
   }
   $('#archiveCount').textContent = archive.length ? `(${archive.length})` : '';
+  renderClinicList();
+}
+
+// 예전에 입력한 치과명을 자동완성 목록으로
+function renderClinicList() {
+  const names = [...new Set([...tasks, ...archive].map((t) => t.clinic).filter(Boolean))];
+  $('#clinicList').replaceChildren(...names.map((name) => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    return opt;
+  }));
+}
+
+// 납기일 표시: '10/8 (D-2)', 오늘이면 D-day
+function dueLabel(due) {
+  const [y, m, d] = due.split('-').map(Number);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((new Date(y, m - 1, d) - today) / DAY_MS);
+  const dday = diff === 0 ? 'D-day' : diff > 0 ? `D-${diff}` : `D+${-diff}`;
+  return { text: `납기 ${m}/${d} (${dday})`, diff };
+}
+
+function tagEl(text, cls = '') {
+  const span = document.createElement('span');
+  span.className = `tag ${cls}`.trim();
+  span.textContent = text;
+  return span;
 }
 
 function cardEl(task) {
@@ -149,6 +200,17 @@ function cardEl(task) {
   li.className = 'card';
   li.dataset.id = task.id;
   li.dataset.col = task.col;
+  if (task.clinic || task.due) {
+    const tags = document.createElement('div');
+    tags.className = 'tags';
+    if (task.clinic) tags.append(tagEl(`🦷 ${task.clinic}`));
+    if (task.due) {
+      const { text, diff } = dueLabel(task.due);
+      const urgent = task.col !== 'done' && (diff < 0 ? 'due-over' : diff <= 1 ? 'due-soon' : '');
+      tags.append(tagEl(`📅 ${text}`, urgent || ''));
+    }
+    li.append(tags);
+  }
   if (task.isNew) {
     const badge = document.createElement('span');
     badge.className = 'new-badge';
@@ -283,8 +345,13 @@ $$('.tab').forEach((tab) => tab.addEventListener('click', () => setActiveCol(tab
 $('#addForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = $('#taskInput');
-  addTask(input.value);
+  if (!addTask(input.value, $('#clinicInput').value, $('#dueInput').value)) {
+    input.focus();
+    return;
+  }
   input.value = '';
+  $('#clinicInput').value = '';
+  $('#dueInput').value = '';
 });
 
 $('#clearDoneBtn').addEventListener('click', clearDone);
@@ -305,7 +372,7 @@ function renderArchive() {
     const li = document.createElement('li');
     const text = document.createElement('div');
     text.className = 'a-text';
-    text.textContent = t.text;
+    text.textContent = t.clinic ? `[${t.clinic}] ${t.text}` : t.text;
     const meta = document.createElement('span');
     meta.className = 'a-meta';
     const daysLeft = Math.max(1, Math.ceil((t.archivedAt + ARCHIVE_DAYS * DAY_MS - now) / DAY_MS));
