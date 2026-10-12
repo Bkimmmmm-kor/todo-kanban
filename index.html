@@ -8,21 +8,27 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
-<body>
+<body data-view="todo">
   <header class="top">
-    <h1>할일 보드</h1>
+    <h1 id="pageTitle">할일</h1>
     <span id="syncStatus" class="sync"></span>
     <button id="settingsBtn" class="icon-btn" aria-label="설정">⚙️</button>
   </header>
+
+  <!-- 공지 (모든 메뉴 위에 표시, 마스터만 작성) -->
+  <div class="board-note notice" data-kind="notice" hidden>
+    <span class="note-icon">📢</span>
+    <p class="note-body"></p>
+  </div>
 
   <!-- 로그인 -->
   <section id="authScreen" class="auth" hidden>
     <form id="authForm" class="auth-box" autocomplete="on">
       <img src="icon-192.png" alt="" width="72" height="72">
       <h2>할일 보드</h2>
-      <p class="auth-desc">계정으로 로그인하면 폰·태블릿·PC 어디서든 같은 할일을 볼 수 있어요.</p>
+      <p class="auth-desc">계정으로 로그인하면 폰·태블릿·PC 어디서든 같은 내용을 볼 수 있어요.</p>
       <input id="authEmail" type="email" placeholder="이메일" autocomplete="email" required>
       <input id="authPassword" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password" minlength="6" required>
       <button type="submit" class="primary" data-mode="login">로그인</button>
@@ -32,50 +38,102 @@
     </form>
   </section>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab" data-col="todo" role="tab">할 일 <span class="count" data-count="todo">0</span></button>
-    <button class="tab" data-col="doing" role="tab">진행 중 <span class="count" data-count="doing">0</span></button>
-    <button class="tab" data-col="done" role="tab">완료 <span class="count" data-count="done">0</span></button>
+  <!-- ========== 할일 ========== -->
+  <section class="view" data-view="todo">
+    <nav class="tabs" role="tablist">
+      <button class="tab" data-col="todo" role="tab">할 일 <span class="count" data-count="todo">0</span></button>
+      <button class="tab" data-col="doing" role="tab">진행 중 <span class="count" data-count="doing">0</span></button>
+      <button class="tab" data-col="done" role="tab">완료 <span class="count" data-count="done">0</span></button>
+    </nav>
+
+    <main class="board">
+      <section class="column" data-col="todo">
+        <h2>할 일</h2>
+        <ul class="cards" data-list="todo"></ul>
+        <p class="empty">할 일이 없어요. 아래 입력창에 적어보세요.</p>
+      </section>
+      <section class="column" data-col="doing">
+        <h2>진행 중</h2>
+        <ul class="cards" data-list="doing"></ul>
+        <p class="empty">진행 중인 일이 없어요.</p>
+      </section>
+      <section class="column" data-col="done">
+        <h2>완료</h2>
+        <ul class="cards" data-list="done"></ul>
+        <p class="empty">완료한 일이 없어요.</p>
+        <button id="clearDoneBtn" class="text-btn">완료 항목 비우기 (아카이브로 이동)</button>
+      </section>
+    </main>
+
+    <p class="hint">탭: 다음 단계로 · 길게 누르기: 수정/삭제</p>
+
+    <form id="addForm" class="composer" autocomplete="off">
+      <div class="composer-extra">
+        <input id="clinicInput" type="text" placeholder="치과명 (선택)" list="clinicList" enterkeyhint="next">
+        <div class="due-wrap">
+          <button type="button" id="dueBtn" class="due-btn">📅 납기일</button>
+          <button type="button" id="dueClear" class="due-clear" aria-label="납기일 지우기" hidden>✕</button>
+          <!-- 달력은 이 칸이 띄움 (화면에는 안 보임) -->
+          <input id="dueInput" type="date" tabindex="-1" aria-hidden="true">
+        </div>
+      </div>
+      <div class="composer-main">
+        <input id="taskInput" type="text" placeholder="할 일 입력 후 키보드의 완료" enterkeyhint="done">
+        <!-- 키보드 '완료'로 추가되도록 남겨 둔 숨은 버튼 -->
+        <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">추가</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ========== 영업일지 ========== -->
+  <section class="view" data-view="journal" hidden>
+    <main class="scroll">
+      <ul id="journalList" class="journal-list"></ul>
+      <p class="empty journal-empty">작성한 영업일지가 없어요.<br>아래 버튼으로 오늘 방문한 치과를 기록해 보세요.</p>
+    </main>
+    <div class="action-bar">
+      <button id="newJournalBtn" class="primary-btn">＋ 영업일지 작성</button>
+    </div>
+  </section>
+
+  <!-- ========== 계산기 ========== -->
+  <section class="view" data-view="calc" hidden>
+    <main class="scroll calc">
+      <div class="board-note promo" data-kind="promo" hidden>
+        <span class="note-icon">🎁</span>
+        <p class="note-body"></p>
+      </div>
+
+      <p class="field-label">치과 등급</p>
+      <div class="segmented" id="gradeSeg">
+        <button type="button" data-value="gold">Gold</button>
+        <button type="button" data-value="platinum">Platinum</button>
+      </div>
+
+      <div class="calc-head">
+        <span>환자명</span><span>상악 단계</span><span>하악 단계</span><span></span>
+      </div>
+      <ul id="calcRows" class="calc-rows"></ul>
+      <button id="addPatientBtn" type="button" class="text-btn">＋ 환자 추가</button>
+
+      <div class="calc-result">
+        <p class="calc-result-label">환자수</p>
+        <p id="calcResult" class="calc-result-value">-</p>
+        <p id="calcNote" class="calc-note"></p>
+      </div>
+      <button id="calcResetBtn" type="button" class="text-btn muted">입력 모두 지우기</button>
+    </main>
+  </section>
+
+  <!-- 아래 메뉴 -->
+  <nav class="bottom-nav">
+    <button data-view="todo">✅<span>할일</span></button>
+    <button data-view="journal">📝<span>영업일지</span></button>
+    <button data-view="calc">🧮<span>계산기</span></button>
   </nav>
 
-  <main class="board">
-    <section class="column" data-col="todo">
-      <h2>할 일</h2>
-      <ul class="cards" data-list="todo"></ul>
-      <p class="empty">할 일이 없어요. 아래 입력창에 적어보세요.</p>
-    </section>
-    <section class="column" data-col="doing">
-      <h2>진행 중</h2>
-      <ul class="cards" data-list="doing"></ul>
-      <p class="empty">진행 중인 일이 없어요.</p>
-    </section>
-    <section class="column" data-col="done">
-      <h2>완료</h2>
-      <ul class="cards" data-list="done"></ul>
-      <p class="empty">완료한 일이 없어요.</p>
-      <button id="clearDoneBtn" class="text-btn">완료 항목 비우기 (아카이브로 이동)</button>
-    </section>
-  </main>
-
-  <p class="hint">탭: 다음 단계로 · 길게 누르기: 수정/삭제</p>
-
-  <form id="addForm" class="composer" autocomplete="off">
-    <div class="composer-extra">
-      <input id="clinicInput" type="text" placeholder="치과명 (선택)" list="clinicList" enterkeyhint="next">
-      <div class="due-wrap">
-        <button type="button" id="dueBtn" class="due-btn">📅 납기일</button>
-        <button type="button" id="dueClear" class="due-clear" aria-label="납기일 지우기" hidden>✕</button>
-        <!-- 달력은 이 칸이 띄움 (화면에는 안 보임) -->
-        <input id="dueInput" type="date" tabindex="-1" aria-hidden="true">
-      </div>
-    </div>
-    <div class="composer-main">
-      <input id="taskInput" type="text" placeholder="할 일 입력 후 키보드의 완료" enterkeyhint="done">
-      <!-- 키보드 '완료'로 추가되도록 남겨 둔 숨은 버튼 -->
-      <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">추가</button>
-    </div>
-  </form>
   <datalist id="clinicList"></datalist>
+  <datalist id="regionList"></datalist>
 
   <!-- 카드 메뉴 -->
   <dialog id="cardMenu" class="sheet">
@@ -88,7 +146,7 @@
     <button data-action="close" class="muted">닫기</button>
   </dialog>
 
-  <!-- 수정 -->
+  <!-- 할일 수정 -->
   <dialog id="editDialog" class="sheet">
     <form id="editForm" method="dialog" class="edit-form" autocomplete="off">
       <p class="sheet-title">할 일 수정</p>
@@ -102,17 +160,78 @@
     </form>
   </dialog>
 
+  <!-- 영업일지 작성/수정 -->
+  <dialog id="journalDialog" class="sheet tall">
+    <form id="journalForm" method="dialog" class="edit-form" autocomplete="off">
+      <p id="journalDialogTitle" class="sheet-title" tabindex="-1" autofocus>영업일지 작성</p>
+      <label>방문일<input id="jDate" type="date" required></label>
+      <div class="two-col">
+        <label>지역<input id="jRegion" type="text" list="regionList" placeholder="예: 강남구"></label>
+        <label>치과명<input id="jClinic" type="text" list="clinicList" placeholder="치과명"></label>
+      </div>
+      <p class="field-label">교정과</p>
+      <div class="segmented" id="jOrtho">
+        <button type="button" data-value="true">교정과 O</button>
+        <button type="button" data-value="false">교정과 X</button>
+      </div>
+      <p class="field-label">감도</p>
+      <div class="segmented temp" id="jTemp">
+        <button type="button" data-value="상">상</button>
+        <button type="button" data-value="중">중</button>
+        <button type="button" data-value="하">하</button>
+      </div>
+      <label>내용<textarea id="jContent" rows="5" placeholder="상담 내용, 다음 약속 등"></textarea></label>
+      <div class="edit-actions">
+        <button type="button" id="jDeleteBtn" class="danger" hidden>삭제</button>
+        <button type="button" data-action="close" class="muted">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 공지/프로모션 작성 (마스터) -->
+  <dialog id="noteDialog" class="sheet">
+    <form id="noteForm" method="dialog" class="edit-form">
+      <p id="noteDialogTitle" class="sheet-title">공지 작성</p>
+      <p class="sheet-desc">모든 사용자에게 보여요. 비워서 저장하면 내려가요.</p>
+      <label><textarea id="noteText" rows="5"></textarea></label>
+      <div class="edit-actions">
+        <button type="button" data-action="close" class="muted">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- 설정 -->
   <dialog id="settings" class="sheet">
-    <p class="sheet-title">설정 · 백업</p>
+    <p class="sheet-title">설정</p>
     <p id="accountEmail" class="sheet-desc"></p>
+    <button id="nameBtn">🙂 이름 바꾸기 <span id="nameLabel" class="muted"></span></button>
+    <div id="masterTools" hidden>
+      <button id="noticeEditBtn">📢 공지 작성 (마스터)</button>
+      <button id="promoEditBtn">🎁 프로모션 작성 (마스터)</button>
+      <button id="reportBtn">📊 주간 엑셀 다운로드 (마스터)</button>
+    </div>
     <button id="archiveBtn">🗄️ 아카이브 <span id="archiveCount" class="muted"></span></button>
-    <button id="exportBtn">📤 백업 파일로 내보내기</button>
-    <button id="importBtn">📥 백업 파일 가져오기</button>
+    <button id="exportBtn">📤 할일 백업 내보내기</button>
+    <button id="importBtn">📥 할일 백업 가져오기</button>
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 6</p>
+    <p class="sheet-desc">앱 버전 7</p>
+  </dialog>
+
+  <!-- 주간 엑셀 (마스터) -->
+  <dialog id="reportDialog" class="sheet">
+    <form id="reportForm" method="dialog" class="edit-form">
+      <p class="sheet-title">주간 엑셀 다운로드</p>
+      <p class="sheet-desc">선택한 주(월~일)의 전체 영업사원 할일과 영업일지를 엑셀로 받아요.</p>
+      <label>주 선택<select id="reportWeek"></select></label>
+      <div class="edit-actions">
+        <button type="button" data-action="close" class="muted">취소</button>
+        <button type="submit" class="primary">다운로드</button>
+      </div>
+    </form>
   </dialog>
 
   <!-- 아카이브 -->
@@ -131,6 +250,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="app.js?v=6"></script>
+  <script src="calc.js?v=7"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

@@ -114,7 +114,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* 하단 입력창 */
 .composer {
   display: flex; flex-direction: column; gap: 8px;
-  padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+  padding: 10px 16px;
   background: var(--surface); border-top: 1px solid var(--border);
 }
 .composer-extra, .composer-main { display: flex; gap: 8px; align-items: center; }
@@ -214,7 +214,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .cards:empty ~ #clearDoneBtn { display: none; }
 
 .toast {
-  position: fixed; left: 16px; right: 16px; bottom: calc(140px + env(safe-area-inset-bottom)); z-index: 10;
+  position: fixed; left: 16px; right: 16px; bottom: calc(200px + env(safe-area-inset-bottom)); z-index: 10;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: #111827; color: #fff; padding: 8px 8px 8px 16px; border-radius: 12px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, .3);
@@ -229,3 +229,103 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .column { display: block; background: rgba(127, 127, 127, .08); border-radius: 16px; padding: 12px; }
   .column h2 { display: block; font-size: 1rem; margin: 4px 4px 12px; }
 }
+
+/* ================= v7: 메뉴 구조 ================= */
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view[hidden] { display: none; }
+.scroll { flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
+
+.bottom-nav {
+  display: flex; background: var(--surface); border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.bottom-nav button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 0 10px; border: 0; background: none; font-size: 1.3rem; color: var(--muted);
+  filter: grayscale(1); opacity: .65;
+}
+.bottom-nav button span { font-size: .78rem; font-weight: 600; }
+.bottom-nav button[aria-current="page"] { color: var(--accent); filter: none; opacity: 1; }
+
+/* 공지 / 프로모션 */
+.board-note {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 4px 16px 8px; padding: 10px 14px; border-radius: 12px;
+  font-size: .95rem; line-height: 1.45; cursor: pointer;
+}
+.board-note[hidden] { display: none; }
+.board-note.notice { background: #fef3c7; color: #78350f; }
+.board-note.promo { margin: 0 0 16px; background: #fce7f3; color: #831843; }
+.board-note.empty-master { background: none; border: 1px dashed var(--border); color: var(--muted); }
+.note-body {
+  margin: 0; flex: 1; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.board-note.expanded .note-body { -webkit-line-clamp: unset; display: block; }
+@media (prefers-color-scheme: dark) {
+  .board-note.notice { background: #422006; color: #fde68a; }
+  .board-note.promo { background: #500724; color: #fbcfe8; }
+}
+
+/* 공통: 선택 버튼 묶음 */
+.field-label { margin: 12px 0 6px; font-size: .85rem; color: var(--muted); }
+.segmented { display: flex; gap: 8px; }
+.segmented button {
+  flex: 1; height: 46px; border-radius: 10px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.sheet .segmented button { border-top: 1px solid var(--border); text-align: center; padding: 0; }
+.segmented button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.segmented.temp button.on[data-value="상"] { background: var(--danger); border-color: var(--danger); }
+.segmented.temp button.on[data-value="중"] { background: var(--todo); border-color: var(--todo); }
+.segmented.temp button.on[data-value="하"] { background: var(--muted); border-color: var(--muted); }
+
+.action-bar { padding: 10px 16px; background: var(--surface); border-top: 1px solid var(--border); }
+.primary-btn {
+  width: 100%; height: 52px; border: 0; border-radius: 12px;
+  background: var(--accent); color: #fff; font-size: 1.05rem; font-weight: 700;
+}
+.two-col { display: flex; gap: 8px; }
+.two-col label { flex: 1; min-width: 0; }
+.sheet.tall { max-height: 92vh; }
+.edit-form select {
+  display: block; width: 100%; margin-top: 4px; padding: 12px; font: inherit; font-size: 1.05rem;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+
+/* 영업일지 목록 */
+.journal-list { list-style: none; margin: 0; padding: 0; }
+.journal-day { margin: 16px 0 8px; font-size: .85rem; font-weight: 700; color: var(--muted); }
+.journal-day:first-child { margin-top: 4px; }
+.journal-item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 10px; cursor: pointer;
+}
+.journal-item .j-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.journal-item .j-clinic { font-weight: 700; font-size: 1.05rem; margin-right: 2px; }
+.journal-item .j-content {
+  margin: 0; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tag.temp-상 { background: var(--danger); color: #fff; }
+.tag.temp-중 { background: var(--todo); color: #fff; }
+.tag.temp-하 { background: var(--border); color: var(--muted); }
+.journal-list:not(:empty) + .journal-empty { display: none; }
+
+/* 계산기 */
+.calc-head, .calc-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr 36px; gap: 6px; align-items: center; }
+.calc-head { margin: 18px 0 6px; font-size: .8rem; color: var(--muted); }
+.calc-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.calc-row input {
+  width: 100%; min-width: 0; height: 46px; padding: 0 10px; font-size: 1rem;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.calc-row input[inputmode="numeric"] { text-align: center; }
+.calc-row button { height: 46px; border: 0; background: none; color: var(--muted); font-size: 1.1rem; }
+.calc-result {
+  margin: 16px 0 8px; padding: 18px; border-radius: 16px; text-align: center;
+  background: var(--surface); border: 2px solid var(--accent);
+}
+.calc-result-label { margin: 0; color: var(--muted); font-size: .9rem; }
+.calc-result-value { margin: 4px 0; font-size: 2.2rem; font-weight: 800; color: var(--accent); }
+.calc-note { margin: 0; font-size: .85rem; color: var(--muted); word-break: keep-all; }
