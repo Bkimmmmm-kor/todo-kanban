@@ -32,7 +32,8 @@ let profileName = '';
 let tasks = [];
 let archive = [];
 let journals = [];
-let notes = { notice: '', promo: '' }; // 공지 / 프로모션
+let notes = { notice: '', promo: '' }; // 공지 / 프로모션 문구
+let promo = { discounts: {}, until: '' }; // 프로모션 패키지별 할인액(원), 종료일
 let activeCol = 'todo';
 
 const isMaster = () => MASTER_EMAILS.includes(user?.email?.toLowerCase());
@@ -143,7 +144,7 @@ function saveCache() {
   if (!user) return;
   try {
     localStorage.setItem(cacheKey(), JSON.stringify({
-      tasks, archive, journals, notes, profileName, priceData: priceTable,
+      tasks, archive, journals, notes, promo, profileName, priceData: priceTable,
       synced: Object.fromEntries(Object.entries(stores).map(([k, s]) => [k, [...s.synced]])),
     }));
   } catch { /* 저장 공간 부족 등: 서버 저장은 계속됨 */ }
@@ -157,6 +158,7 @@ function loadCache() {
     archive = data.archive || [];
     journals = data.journals || [];
     notes = data.notes || notes;
+    promo = data.promo || promo;
     profileName = data.profileName || '';
     setPriceTable(data.priceData);
     // 예전 캐시(할일만 있던 버전)는 synced 가 배열
@@ -229,7 +231,7 @@ async function pull() {
       // 마스터는 모든 사람 것을 볼 수 있으므로 내 것만 받음
       sb.from('tasks').select('*').eq('user_id', uid),
       sb.from('journals').select('*').eq('user_id', uid),
-      sb.from('board').select('kind, body'),
+      sb.from('board').select('kind, body, data'),
       sb.from('price_table').select('data').maybeSingle(),
     ]);
     for (const res of [taskRes, journalRes, boardRes]) if (res.error) throw res.error;
@@ -241,7 +243,11 @@ async function pull() {
       store.synced = new Map(data.map((r) => [r.id, JSON.stringify(store.toRow(store.fromRow(r)))]));
     }
     notes = { notice: '', promo: '' };
-    boardRes.data.forEach((r) => (notes[r.kind] = r.body || ''));
+    promo = { discounts: {}, until: '' };
+    boardRes.data.forEach((r) => {
+      notes[r.kind] = r.body || '';
+      if (r.kind === 'promo' && r.data) promo = { discounts: r.data.discounts || {}, until: r.data.until || '' };
+    });
     // 수가표는 없어도 나머지 동기화는 계속
     if (priceRes.error) console.error('[sync] price', priceRes.error);
     else setPriceTable(priceRes.data?.data);
@@ -794,11 +800,17 @@ function quoteCard(q, sub = false) {
     el('p', 'quote-price', `${won(q.price)}원`),
     el('p', 'quote-formula', q.formula),
   );
+  if (q.discount) {
+    const promoLine = el('p', 'quote-promo', `🎁 프로모션 -${won(q.discount)}원`);
+    promoLine.append(el('span', 'quote-list', `정가 ${won(q.listPrice)}원`));
+    card.append(promoLine);
+  }
   if (q.key !== 'unit') card.append(el('p', 'quote-meta', `보증 ${q.warranty} · 리파인먼트 ${q.refinement}`));
   return card;
 }
 
 let lastQuoteText = '';
+const promoNote = (x) => (x.discount ? ` (프로모션 ${won(x.discount)}원 할인 적용)` : '');
 
 function renderQuote() {
   const out = $('#calcOut');
@@ -810,7 +822,7 @@ function renderQuote() {
     lastQuoteText = '';
     return;
   }
-  const q = realignerQuote(calc.grade, calc.upper, calc.lower);
+  const q = realignerQuote(calc.grade, calc.upper, calc.lower, priceTable, activeDiscounts());
   $('#calcCopyBtn').hidden = !q;
   if (!q) {
     out.replaceChildren(el('p', 'calc-empty', '상악·하악 stage를 입력하면 청구액이 나와요.'));
@@ -822,17 +834,17 @@ function renderQuote() {
     ? `${stages} stage · 편악 진행 (패키지가 60%)`
     : `${stages} stage → 큰 쪽 ${q.maxStage} stage 기준`;
   const nodes = [el('p', 'quote-basis', `${q.grade} · ${basis}`)];
-  const lines = [`[리얼라이너 수가 안내] ${q.grade} 등급`];
+  const lines = ['[리얼라이너 수가 안내]'];
   if (calc.name.trim()) lines.push(`환자: ${calc.name.trim()}`);
   lines.push(stages.replaceAll(' · ', ' / ') + ' stage' + (q.single ? ' (편악)' : ''));
 
   if (q.choices) {
     nodes.push(el('p', 'quote-basis', '40 stage 이상: 아래 두 패키지 중 선택 (추가 비용 없음)'));
     q.choices.forEach((c, i) => nodes.push(quoteCard(c, i > 0)));
-    q.choices.forEach((c) => lines.push(`· ${c.name}: ${won(c.price)}원 (보증 ${c.warranty})`));
+    q.choices.forEach((c) => lines.push(`· ${c.name}: ${won(c.price)}원${promoNote(c)} (보증 ${c.warranty})`));
   } else {
     nodes.push(quoteCard(q.main));
-    lines.push(`· ${q.main.name}: ${won(q.main.price)}원`);
+    lines.push(`· ${q.main.name}: ${won(q.main.price)}원${promoNote(q.main)}`);
     lines.push(`  (${q.main.formula})`);
   }
 
@@ -843,7 +855,7 @@ function renderQuote() {
     tip.append('💡 ', el('strong', '', `${alt.name}`), ` 적용 시 ${won(alt.price)}원 — `,
       el('strong', '', `${won(alt.saving)}원 절감`), benefit);
     nodes.push(tip, quoteCard(alt, true));
-    lines.push(`· 추천 ${alt.name}: ${won(alt.price)}원 (${won(alt.saving)}원 절감${benefit})`);
+    lines.push(`· 추천 ${alt.name}: ${won(alt.price)}원${promoNote(alt)} (${won(alt.saving)}원 절감${benefit})`);
   }
   lines.push('※ VAT 포함');
   lastQuoteText = lines.join('\n');
@@ -891,14 +903,49 @@ $('#calcResetBtn').addEventListener('click', () => {
 // ================= 공지 / 프로모션 =================
 const NOTE_LABELS = { notice: '공지', promo: '프로모션' };
 
+const PROMO_PKGS = [['lite', 'Lite'], ['moderate', 'Moderate'], ['advanced', 'Advanced'], ['comprehensive', 'Comprehensive']];
+
+// 종료일이 지나면 할인 꺼짐
+const promoExpired = () => !!promo.until && promo.until < ymd(new Date());
+const hasDiscounts = () => Object.values(promo.discounts || {}).some((v) => v > 0);
+function activeDiscounts() {
+  return promoExpired() ? {} : (promo.discounts || {});
+}
+
+const manwon = (n) => `${Number((n / 10000).toFixed(1))}만원`;
+
 function renderNotes() {
   $$('.board-note').forEach((el) => {
     const kind = el.dataset.kind;
     const body = notes[kind] || '';
-    const masterEmpty = !body && isMaster();
-    el.hidden = !body && !masterEmpty;
+    const isPromo = kind === 'promo';
+    const expired = isPromo && promoExpired();
+    const hasContent = !!body || (isPromo && hasDiscounts());
+    const masterEmpty = (!hasContent || expired) && isMaster();
+    el.hidden = (!hasContent || expired) && !isMaster();
     el.classList.toggle('empty-master', masterEmpty);
-    el.querySelector('.note-body').textContent = body || `${NOTE_LABELS[kind]} 작성하기 (마스터)`;
+    let text = body;
+    if (!hasContent) text = `${NOTE_LABELS[kind]} 작성하기 (마스터)`;
+    else if (expired) text = `(종료된 프로모션) ${body}`;
+    el.querySelector('.note-body').textContent = text;
+    const chips = el.querySelector('.promo-chips');
+    if (chips) {
+      const items = expired ? [] : PROMO_PKGS
+        .filter(([key]) => promo.discounts?.[key] > 0)
+        .map(([key, name]) => {
+          const s = document.createElement('span');
+          s.textContent = `${name} -${manwon(promo.discounts[key])}`;
+          return s;
+        });
+      if (items.length && promo.until) {
+        const s = document.createElement('span');
+        const d = parseYmd(promo.until);
+        s.textContent = `~${d.getMonth() + 1}/${d.getDate()}`;
+        items.push(s);
+      }
+      chips.replaceChildren(...items);
+      chips.hidden = !items.length;
+    }
   });
 }
 
@@ -909,6 +956,15 @@ function openNoteEditor(kind) {
   noteKind = kind;
   $('#noteDialogTitle').textContent = `${NOTE_LABELS[kind]} 작성`;
   $('#noteText').value = notes[kind] || '';
+  const isPromo = kind === 'promo';
+  $('#promoFields').hidden = !isPromo;
+  if (isPromo) {
+    $$('#promoFields [data-pkg]').forEach((input) => {
+      const v = promo.discounts?.[input.dataset.pkg];
+      input.value = v > 0 ? String(Number((v / 10000).toFixed(1))) : '';
+    });
+    $('#promoUntil').value = promo.until || '';
+  }
   noteDialog.showModal();
 }
 
@@ -917,21 +973,40 @@ $$('.board-note').forEach((el) => el.addEventListener('click', () => {
   else el.classList.toggle('expanded');
 }));
 
+$$('#promoFields [data-pkg]').forEach((input) => input.addEventListener('input', () => {
+  input.value = input.value.replace(/[^0-9.]/g, '');
+}));
+
 $('#noteForm').addEventListener('submit', async () => {
   const kind = noteKind;
   const body = $('#noteText').value.trim();
-  const prev = notes[kind];
+  const row = { kind, body };
+  const prevBody = notes[kind];
+  const prevPromo = promo;
+  if (kind === 'promo') {
+    const discounts = {};
+    $$('#promoFields [data-pkg]').forEach((input) => {
+      const amount = Math.round((parseFloat(input.value) || 0) * 10000);
+      if (amount > 0) discounts[input.dataset.pkg] = amount;
+    });
+    promo = { discounts, until: $('#promoUntil').value || '' };
+    row.data = promo;
+  }
   notes[kind] = body;
   renderNotes();
-  const { error } = await sb.from('board').upsert({ kind, body });
+  renderQuote();
+  const { error } = await sb.from('board').upsert(row);
   if (error) {
-    notes[kind] = prev;
+    notes[kind] = prevBody;
+    promo = prevPromo;
     renderNotes();
+    renderQuote();
     showToast(`${NOTE_LABELS[kind]}을(를) 저장하지 못했어요: ${error.message}`);
     return;
   }
   saveCache();
-  showToast(body ? `${NOTE_LABELS[kind]}을(를) 올렸어요.` : `${NOTE_LABELS[kind]}을(를) 내렸어요.`);
+  const has = body || (kind === 'promo' && hasDiscounts());
+  showToast(has ? `${NOTE_LABELS[kind]}을(를) 올렸어요.` : `${NOTE_LABELS[kind]}을(를) 내렸어요.`);
 });
 
 // ================= 설정 =================
@@ -1315,6 +1390,7 @@ function setUser(u) {
   archive = [];
   journals = [];
   notes = { notice: '', promo: '' };
+  promo = { discounts: {}, until: '' };
   profileName = '';
   setPriceTable(null);
   Object.values(stores).forEach((s) => (s.synced = new Map()));

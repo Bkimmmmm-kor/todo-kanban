@@ -33,12 +33,14 @@ const won = (n) => `${Math.round(n).toLocaleString('ko-KR')}`;
 
 // 상악/하악 stage 와 등급으로 청구액 계산
 // upper/lower: 진행 stage (0 또는 빈 값 = 그 악은 진행 안 함)
+// discounts  : 진행 중인 프로모션의 패키지별 할인액(원) { lite, moderate, advanced, comprehensive }
+//              Unit 은 패키지 상품이 아니므로 할인 없음
 // 반환: null(입력 없음 또는 수가표 없음) 또는
 //   { maxStage, single, main, alternative, choices }
 //   main        : 기준표에 따른 패키지 견적
 //   alternative : 더 저렴한 상위/대체 패키지가 있으면 그 견적 (없으면 null)
 //   choices     : 40 stage 이상일 때 Advanced/Comprehensive 두 가지
-function realignerQuote(grade, upper, lower, table = priceTable) {
+function realignerQuote(grade, upper, lower, table = priceTable, discounts = {}) {
   if (!table) return null;
   const P = table.grades[grade];
   if (!P) return null;
@@ -57,6 +59,8 @@ function realignerQuote(grade, upper, lower, table = priceTable) {
     return {
       ...info('unit'),
       price: units * table.unit_price,
+      listPrice: units * table.unit_price,
+      discount: 0,
       units,
       additional: 0,
       formula: `${won(table.unit_price)} × ${units} unit (${parts.map(([l, u]) => `${l} ${u}`).join(' + ')})`,
@@ -67,15 +71,20 @@ function realignerQuote(grade, upper, lower, table = priceTable) {
     const pkg = info(key);
     const pkgPrice = P[key] * (single ? table.single_arch_rate : 1);
     const additional = arches.reduce((s, [, n]) => s + Math.max(0, n - pkg.base), 0);
-    const price = pkgPrice + additional * P.additional;
+    const listPrice = pkgPrice + additional * P.additional;
+    const discount = Math.min(listPrice, Math.max(0, Number(discounts?.[key]) || 0));
+    let formula = additional
+      ? `${won(pkgPrice)} + ${won(P.additional)} × ${additional} (Additional)`
+      : `${won(pkgPrice)}${key === 'advanced' || key === 'comprehensive' ? ' (추가 비용 없음)' : ''}`;
+    if (discount) formula += ` − ${won(discount)} (프로모션)`;
     return {
       ...pkg,
-      price,
+      price: listPrice - discount,
+      listPrice,
+      discount,
       pkgPrice,
       additional,
-      formula: additional
-        ? `${won(pkgPrice)} + ${won(P.additional)} × ${additional} (Additional)`
-        : `${won(pkgPrice)}${key === 'advanced' || key === 'comprehensive' ? ' (추가 비용 없음)' : ''}`,
+      formula,
     };
   };
 

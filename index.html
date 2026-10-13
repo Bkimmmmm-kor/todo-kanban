@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -101,7 +101,10 @@
     <main class="scroll calc">
       <div class="board-note promo" data-kind="promo" hidden>
         <span class="note-icon">🎁</span>
-        <p class="note-body"></p>
+        <div class="note-text">
+          <p class="note-body"></p>
+          <div class="promo-chips"></div>
+        </div>
       </div>
 
       <p class="field-label">치과 등급</p>
@@ -204,6 +207,16 @@
       <p id="noteDialogTitle" class="sheet-title">공지 작성</p>
       <p class="sheet-desc">모든 사용자에게 보여요. 비워서 저장하면 내려가요.</p>
       <label><textarea id="noteText" rows="5"></textarea></label>
+      <div id="promoFields" hidden>
+        <p class="field-label">패키지별 할인 (만원 단위 · 비우면 할인 없음)</p>
+        <div class="promo-grid">
+          <label>Lite<span class="won-input"><input data-pkg="lite" type="text" inputmode="decimal" placeholder="0">만원</span></label>
+          <label>Moderate<span class="won-input"><input data-pkg="moderate" type="text" inputmode="decimal" placeholder="0">만원</span></label>
+          <label>Advanced<span class="won-input"><input data-pkg="advanced" type="text" inputmode="decimal" placeholder="0">만원</span></label>
+          <label>Comprehensive<span class="won-input"><input data-pkg="comprehensive" type="text" inputmode="decimal" placeholder="0">만원</span></label>
+        </div>
+        <label>종료일 (선택 · 이 날까지 할인 적용)<input id="promoUntil" type="date"></label>
+      </div>
       <div class="edit-actions">
         <button type="button" data-action="close" class="muted">취소</button>
         <button type="submit" class="primary">저장</button>
@@ -227,7 +240,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 10</p>
+    <p class="sheet-desc">앱 버전 11</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -259,7 +272,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="calc.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

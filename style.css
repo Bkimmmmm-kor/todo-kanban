@@ -344,3 +344,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .calc-empty { margin: 8px 0; padding: 24px 0; text-align: center; color: var(--muted); }
 .calc-actions { display: flex; justify-content: space-between; margin-top: 8px; }
 .calc-source { margin: 12px 0 0; font-size: .75rem; color: var(--muted); text-align: center; }
+
+/* 프로모션 할인 */
+.promo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.edit-form .promo-grid label { margin: 0; }
+.won-input { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--muted); }
+.edit-form .won-input input { margin-top: 0; text-align: right; }
+.promo-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.promo-chips span { padding: 2px 8px; border-radius: 6px; background: rgba(255, 255, 255, .6); font-size: .8rem; font-weight: 700; }
+@media (prefers-color-scheme: dark) { .promo-chips span { background: rgba(0, 0, 0, .25); } }
+.board-note.promo .note-text { flex: 1; min-width: 0; }
+.quote-promo { margin: 6px 0 0; font-size: .85rem; font-weight: 700; color: #be185d; }
+.quote-list { text-decoration: line-through; color: var(--muted); font-weight: 400; margin-left: 4px; }
+@media (prefers-color-scheme: dark) { .quote-promo { color: #f9a8d4; } }
