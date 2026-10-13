@@ -831,7 +831,7 @@ function renderQuote() {
   }
   const stages = q.arches.map(([label, n]) => `${label} ${n}`).join(' · ');
   const basis = q.single
-    ? `${stages} stage · 편악 진행 (패키지가 60%)`
+    ? `${stages} stage · 편악 진행 (패키지가 60%${Object.values(activeDiscounts()).some((v) => v > 0) ? ', 프로모션 할인 제외' : ''})`
     : `${stages} stage → 큰 쪽 ${q.maxStage} stage 기준`;
   const nodes = [el('p', 'quote-basis', `${q.grade} · ${basis}`)];
   const lines = ['[리얼라이너 수가 안내]'];
