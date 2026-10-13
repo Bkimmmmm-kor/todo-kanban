@@ -86,7 +86,7 @@ function journalToRow(j) {
     visit_date: j.date,
     region: j.region || null,
     clinic: j.clinic || null,
-    is_ortho: typeof j.ortho === 'boolean' ? j.ortho : null,
+    clinic_type: j.type || null,
     temperature: j.temp || null,
     content: j.content || null,
     created_at: toIso(j.createdAt),
@@ -99,11 +99,20 @@ function journalFromRow(r) {
     date: r.visit_date,
     region: r.region || '',
     clinic: r.clinic || '',
-    ortho: typeof r.is_ortho === 'boolean' ? r.is_ortho : null,
+    type: clinicType(r),
     temp: r.temperature || '',
     content: r.content || '',
     createdAt: toMs(r.created_at),
   };
+}
+
+// 치과 구분: 교정과 / 교정페이 / 일반 (예전 일지의 교정과 O/X 도 변환)
+const CLINIC_TYPES = ['교정과', '교정페이', '일반'];
+function clinicType(r) {
+  if (CLINIC_TYPES.includes(r.clinic_type)) return r.clinic_type;
+  if (r.is_ortho === true) return '교정과';
+  if (r.is_ortho === false) return '일반';
+  return '';
 }
 
 const sortJournals = (list) => list.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
@@ -157,7 +166,8 @@ function loadCache() {
     if (!data) return;
     tasks = data.tasks || [];
     archive = data.archive || [];
-    journals = data.journals || [];
+    // 예전 캐시의 교정과 O/X → 구분으로 변환
+    journals = (data.journals || []).map((j) => ('type' in j ? j : { ...j, type: clinicType({ is_ortho: j.ortho }) }));
     notes = data.notes || notes;
     promo = data.promo || promo;
     accessOk = !!data.approved;
@@ -677,7 +687,7 @@ function renderJournals() {
     clinic.textContent = j.clinic || '(치과명 없음)';
     head.append(clinic);
     if (j.region) head.append(tagEl(`📍 ${j.region}`));
-    if (typeof j.ortho === 'boolean') head.append(tagEl(j.ortho ? '교정과 O' : '교정과 X'));
+    if (j.type) head.append(tagEl(j.type));
     if (j.temp) head.append(tagEl(`감도 ${j.temp}`, `temp-${j.temp}`));
     li.append(head);
     if (j.content) {
@@ -710,7 +720,7 @@ function bindSeg(seg, onChange, allowEmpty = true) {
 
 const journalDialog = $('#journalDialog');
 let editJournalId = null;
-bindSeg($('#jOrtho'));
+bindSeg($('#jType'));
 bindSeg($('#jTemp'));
 
 function openJournal(id = null) {
@@ -720,7 +730,7 @@ function openJournal(id = null) {
   $('#jDate').value = j ? j.date : ymd(new Date());
   $('#jRegion').value = j?.region || '';
   $('#jClinic').value = j?.clinic || '';
-  setSeg($('#jOrtho'), j && typeof j.ortho === 'boolean' ? j.ortho : '');
+  setSeg($('#jType'), j?.type || '');
   setSeg($('#jTemp'), j?.temp || '');
   $('#jContent').value = j?.content || '';
   $('#jDeleteBtn').hidden = !j;
@@ -734,12 +744,11 @@ $('#journalList').addEventListener('click', (e) => {
 });
 
 $('#journalForm').addEventListener('submit', (e) => {
-  const ortho = segValue($('#jOrtho'));
   const data = {
     date: $('#jDate').value || ymd(new Date()),
     region: $('#jRegion').value.trim(),
     clinic: $('#jClinic').value.trim(),
-    ortho: ortho === '' ? null : ortho === 'true',
+    type: segValue($('#jType')),
     temp: segValue($('#jTemp')),
     content: $('#jContent').value.trim(),
   };
@@ -1414,7 +1423,7 @@ async function buildWeeklyReport(mondayStr) {
     요일: WEEKDAYS[parseYmd(j.visit_date).getDay()],
     지역: j.region || '',
     치과명: j.clinic || '',
-    교정과: j.is_ortho === true ? 'O' : j.is_ortho === false ? 'X' : '',
+    구분: clinicType(j),
     감도: j.temperature || '',
     내용: j.content || '',
   })).sort((a, b) => a.영업사원.localeCompare(b.영업사원, 'ko') || a.방문일.localeCompare(b.방문일));
@@ -1429,7 +1438,7 @@ async function buildWeeklyReport(mondayStr) {
     ['영업사원', '할일 등록', '할일 완료', '영업일지', '감도 상', '감도 중', '감도 하'],
     [14, 10, 10, 10, 8, 8, 8]), '요약');
   XLSX.utils.book_append_sheet(wb, sheet(journalRows,
-    ['영업사원', '방문일', '요일', '지역', '치과명', '교정과', '감도', '내용'],
+    ['영업사원', '방문일', '요일', '지역', '치과명', '구분', '감도', '내용'],
     [12, 12, 6, 12, 20, 8, 6, 60]), '영업일지');
   XLSX.utils.book_append_sheet(wb, sheet(taskRows,
     ['영업사원', '치과명', '내용', '상태', '납기일', '등록일시', '완료일시'],

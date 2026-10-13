@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -194,10 +194,11 @@
         <label>지역<input id="jRegion" type="text" list="regionList" placeholder="예: 강남구"></label>
         <label>치과명<input id="jClinic" type="text" list="clinicList" placeholder="치과명"></label>
       </div>
-      <p class="field-label">교정과</p>
-      <div class="segmented" id="jOrtho">
-        <button type="button" data-value="true">교정과 O</button>
-        <button type="button" data-value="false">교정과 X</button>
+      <p class="field-label">구분</p>
+      <div class="segmented" id="jType">
+        <button type="button" data-value="교정과">교정과</button>
+        <button type="button" data-value="교정페이">교정페이</button>
+        <button type="button" data-value="일반">일반</button>
       </div>
       <p class="field-label">감도</p>
       <div class="segmented temp" id="jTemp">
@@ -254,7 +255,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 12</p>
+    <p class="sheet-desc">앱 버전 13</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -295,7 +296,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=12"></script>
-  <script src="app.js?v=12"></script>
+  <script src="calc.js?v=13"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>
