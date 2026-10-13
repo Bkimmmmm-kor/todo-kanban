@@ -29,6 +29,7 @@ const sb = window.supabase
 // ---------- 상태 ----------
 let user = null;
 let profileName = '';
+let accessOk = false; // 승인된 사용자(또는 마스터)인지
 let tasks = [];
 let archive = [];
 let journals = [];
@@ -144,7 +145,7 @@ function saveCache() {
   if (!user) return;
   try {
     localStorage.setItem(cacheKey(), JSON.stringify({
-      tasks, archive, journals, notes, promo, profileName, priceData: priceTable,
+      tasks, archive, journals, notes, promo, profileName, priceData: priceTable, approved: accessOk,
       synced: Object.fromEntries(Object.entries(stores).map(([k, s]) => [k, [...s.synced]])),
     }));
   } catch { /* 저장 공간 부족 등: 서버 저장은 계속됨 */ }
@@ -159,6 +160,7 @@ function loadCache() {
     journals = data.journals || [];
     notes = data.notes || notes;
     promo = data.promo || promo;
+    accessOk = !!data.approved;
     profileName = data.profileName || '';
     setPriceTable(data.priceData);
     // 예전 캐시(할일만 있던 버전)는 synced 가 배열
@@ -186,7 +188,7 @@ function queuePush() {
 }
 
 async function push() {
-  if (!user || !sb) return false;
+  if (!user || !sb || !accessOk) return false;
   if (!hasPending()) return true;
   setSync('saving');
   try {
@@ -218,6 +220,7 @@ let pulling = false;
 let pullAgain = false;
 async function pull() {
   if (!user || !sb) return;
+  if (!accessOk) return checkAccess();
   if (pulling) {
     pullAgain = true; // 받는 중에 또 바뀌었으면 끝난 뒤 한 번 더
     return;
@@ -1026,21 +1029,78 @@ $('#logoutBtn').addEventListener('click', async () => {
 });
 
 // 이름 (주간 보고서에 표시)
-async function loadProfile() {
+// ---------- 가입 승인 확인 ----------
+const pendingScreen = $('#pendingScreen');
+let checkingAccess = false;
+
+async function checkAccess() {
+  if (!user || !sb || checkingAccess) return;
+  checkingAccess = true;
   const uid = user.id;
-  const { data, error } = await sb.from('profiles').select('name').eq('id', uid).maybeSingle();
-  if (error || user?.id !== uid) return;
-  if (data?.name) {
-    profileName = data.name;
+  try {
+    let { data, error } = await sb.from('profiles').select('name, status').eq('id', uid).maybeSingle();
+    if (error) throw error;
+    if (user?.id !== uid) return;
+    if (!data) {
+      // 처음 로그인: 승인 요청용 프로필 만들기 (status 는 서버가 pending 으로 정함)
+      const res = await sb.from('profiles').upsert({ id: uid, email: user.email }).select('name, status').single();
+      if (res.error) throw res.error;
+      data = res.data;
+    }
+    profileName = data.name || '';
+    const ok = isMaster() || data.status === 'approved';
+    showPending(ok ? null : data.status);
+    if (!data.name) {
+      await askName(true);
+      if (!ok) showPending(data.status);
+    }
+    if (ok && !accessOk) {
+      accessOk = true;
+      saveCache();
+      pull();
+    } else if (!ok && accessOk) {
+      // 승인이 취소된 경우
+      accessOk = false;
+      tasks = [];
+      archive = [];
+      journals = [];
+      renderAll();
+    }
     saveCache();
-  } else {
-    await askName(true);
+    if (isMaster()) refreshApprovals();
+  } catch (err) {
+    console.error('[access]', err);
+    // 오프라인: 예전에 승인된 기기면 캐시로 계속 사용
+    if (!accessOk) showPending('offline');
+    setSync('offline');
+  } finally {
+    checkingAccess = false;
   }
 }
 
+function showPending(status) {
+  pendingScreen.hidden = !status;
+  if (!status) return;
+  const text = {
+    pending: ['승인을 기다리고 있어요', '마스터가 가입을 승인하면 바로 사용할 수 있어요.'],
+    rejected: ['가입이 승인되지 않았어요', '마스터에게 문의해 주세요.'],
+    offline: ['서버에 연결할 수 없어요', '인터넷 연결을 확인한 뒤 다시 확인을 눌러 주세요.'],
+  }[status] || ['승인을 기다리고 있어요', ''];
+  $('#pendingTitle').textContent = text[0];
+  $('#pendingDesc').textContent = text[1];
+  $('#pendingWho').textContent = user ? `${profileName ? `${profileName} · ` : ''}${user.email}` : '';
+}
+
+$('#pendingRefreshBtn').addEventListener('click', () => checkAccess());
+$('#pendingNameBtn').addEventListener('click', async () => {
+  await askName();
+  if (!pendingScreen.hidden) $('#pendingWho').textContent = `${profileName ? `${profileName} · ` : ''}${user.email}`;
+});
+$('#pendingLogoutBtn').addEventListener('click', () => sb.auth.signOut());
+
 async function askName(first = false) {
   const name = prompt(first
-    ? '처음 오셨네요! 이름을 입력해 주세요.\n(주간 보고서에 표시돼요)'
+    ? '처음 오셨네요! 이름을 입력해 주세요.\n(마스터 승인과 주간 보고서에 표시돼요)'
     : '이름을 입력해 주세요.', profileName)?.trim();
   if (!name) return;
   const { error } = await sb.from('profiles').upsert({ id: user.id, email: user.email, name });
@@ -1052,6 +1112,90 @@ async function askName(first = false) {
   saveCache();
   showToast(`${name}님으로 저장했어요.`);
 }
+
+// ---------- 가입 승인 (마스터) ----------
+const approvalDialog = $('#approvalDialog');
+let approvals = [];
+
+async function refreshApprovals() {
+  if (!isMaster()) return;
+  const { data, error } = await sb.from('profiles').select('id, name, email, status, created_at')
+    .in('status', ['pending', 'rejected']).order('created_at');
+  if (error) {
+    console.error('[approval]', error);
+    return;
+  }
+  approvals = data.filter((p) => !MASTER_EMAILS.includes((p.email || '').toLowerCase()));
+  const waiting = approvals.filter((p) => p.status === 'pending').length;
+  $('#settingsBtn').classList.toggle('has-badge', waiting > 0);
+  $('#approvalCount').hidden = !waiting;
+  $('#approvalCount').textContent = waiting;
+  if (approvalDialog.open) renderApprovals();
+}
+
+function renderApprovals() {
+  const items = [];
+  for (const [status, label] of [['pending', '승인 대기'], ['rejected', '거절됨']]) {
+    const list = approvals.filter((p) => p.status === status);
+    if (!list.length) continue;
+    const h = document.createElement('li');
+    h.className = 'approval-section';
+    h.textContent = `${label} (${list.length})`;
+    items.push(h);
+    for (const p of list) {
+      const li = document.createElement('li');
+      const who = document.createElement('div');
+      who.className = 'ap-who';
+      const name = document.createElement('span');
+      name.className = 'ap-name';
+      name.textContent = p.name || '(이름 미입력)';
+      const meta = document.createElement('span');
+      meta.className = 'ap-meta';
+      const d = new Date(p.created_at);
+      meta.textContent = `${p.email || ''} · ${d.getMonth() + 1}/${d.getDate()} 가입`;
+      who.append(name, meta);
+      li.append(who);
+      const btn = (text, cls, next) => {
+        const b = document.createElement('button');
+        b.textContent = text;
+        b.className = cls;
+        b.dataset.id = p.id;
+        b.dataset.status = next;
+        return b;
+      };
+      if (status === 'pending') li.append(btn('거절', 'ap-reject', 'rejected'));
+      li.append(btn('승인', 'ap-approve', 'approved'));
+      items.push(li);
+    }
+  }
+  $('#approvalList').replaceChildren(...items);
+}
+
+$('#approvalBtn').addEventListener('click', async () => {
+  settings.close();
+  renderApprovals();
+  approvalDialog.showModal();
+  await refreshApprovals();
+  renderApprovals();
+});
+
+approvalDialog.addEventListener('click', async (e) => {
+  const b = e.target.closest('.approval-list button');
+  if (!b) return;
+  const p = approvals.find((x) => x.id === b.dataset.id);
+  const who = p?.name || p?.email || '';
+  if (b.dataset.status === 'rejected' && !confirm(`${who} 님의 가입을 거절할까요?`)) return;
+  b.disabled = true;
+  const { error } = await sb.from('profiles').update({ status: b.dataset.status }).eq('id', b.dataset.id);
+  if (error) {
+    b.disabled = false;
+    showToast(`처리하지 못했어요: ${error.message}`);
+    return;
+  }
+  showToast(b.dataset.status === 'approved' ? `${who} 님을 승인했어요.` : `${who} 님의 가입을 거절했어요.`);
+  await refreshApprovals();
+  renderApprovals();
+});
 
 $('#nameBtn').addEventListener('click', () => {
   settings.close();
@@ -1393,9 +1537,13 @@ function setUser(u) {
   promo = { discounts: {}, until: '' };
   profileName = '';
   setPriceTable(null);
+  accessOk = false;
+  approvals = [];
+  $('#settingsBtn').classList.remove('has-badge');
   Object.values(stores).forEach((s) => (s.synced = new Map()));
   setSync('');
   authScreen.hidden = !!user;
+  pendingScreen.hidden = true;
   if (!user) {
     renderAll();
     return;
@@ -1410,8 +1558,14 @@ function setUser(u) {
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tasks' }, () => schedulePull())
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'journals' }, () => schedulePull())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'board' }, () => schedulePull())
+    // 승인 상태가 바뀌면 바로 반영 (마스터는 새 가입 요청 알림)
+    .on('postgres_changes', isMaster()
+      ? { event: '*', schema: 'public', table: 'profiles' }
+      : { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
+    () => (isMaster() ? refreshApprovals() : checkAccess()))
     .subscribe();
-  pull().then(() => user && loadProfile());
+  if (accessOk) pull();
+  checkAccess();
 }
 
 // ================= 시작 =================

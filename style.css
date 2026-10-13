@@ -357,3 +357,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .quote-promo { margin: 6px 0 0; font-size: .85rem; font-weight: 700; color: #be185d; }
 .quote-list { text-decoration: line-through; color: var(--muted); font-weight: 400; margin-left: 4px; }
 @media (prefers-color-scheme: dark) { .quote-promo { color: #f9a8d4; } }
+
+/* 가입 승인 */
+.icon-btn { position: relative; }
+.icon-btn.has-badge::after {
+  content: ''; position: absolute; top: 6px; right: 6px;
+  width: 9px; height: 9px; border-radius: 50%; background: var(--danger);
+}
+.count-badge {
+  display: inline-block; min-width: 1.5em; padding: 0 6px; margin-left: 4px; border-radius: 999px;
+  background: var(--danger); color: #fff; font-size: .8rem; font-weight: 700; text-align: center;
+}
+.count-badge[hidden] { display: none; }
+.approval-list { list-style: none; margin: 0; padding: 0; }
+.approval-list li { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); }
+.approval-list .ap-who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.approval-list .ap-name { font-weight: 700; }
+.approval-list .ap-meta { display: block; font-size: .8rem; color: var(--muted); }
+.sheet .approval-list button {
+  width: auto; flex: none; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border);
+  text-align: center; font-size: .95rem;
+}
+.sheet .approval-list .ap-approve { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.approval-section { margin: 14px 0 0; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.approval-list:not(:empty) + .approval-empty { display: none; }
