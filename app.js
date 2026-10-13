@@ -225,6 +225,19 @@ async function push() {
   }
 }
 
+// 서버는 한 번에 최대 1000건만 주므로 나눠서 모두 받기
+// build: 매번 새 쿼리를 만드는 함수 (정렬 기준이 고정돼 있어야 함)
+const PAGE_SIZE = 1000;
+async function selectAll(build) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await build().range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) return rows;
+  }
+}
+
 // 서버에서 최신 내용 받기 (보내지 못한 변경이 있으면 먼저 보냄)
 let pulling = false;
 let pullAgain = false;
@@ -240,17 +253,17 @@ async function pull() {
   try {
     if (!(await queuePush())) return;
     const uid = user.id;
-    const [taskRes, journalRes, boardRes, priceRes] = await Promise.all([
+    const [taskData, journalData, boardRes, priceRes] = await Promise.all([
       // 마스터는 모든 사람 것을 볼 수 있으므로 내 것만 받음
-      sb.from('tasks').select('*').eq('user_id', uid),
-      sb.from('journals').select('*').eq('user_id', uid),
+      selectAll(() => sb.from('tasks').select('*').eq('user_id', uid).order('id')),
+      selectAll(() => sb.from('journals').select('*').eq('user_id', uid).order('id')),
       sb.from('board').select('kind, body, data'),
       sb.from('price_table').select('data').maybeSingle(),
     ]);
-    for (const res of [taskRes, journalRes, boardRes]) if (res.error) throw res.error;
+    if (boardRes.error) throw boardRes.error;
     if (user?.id !== uid) return; // 받는 사이 로그아웃
     if (hasPending()) return; // 받는 사이에 화면에서 바뀜 → 다음 동기화 때 반영
-    for (const [table, data] of [['tasks', taskRes.data], ['journals', journalRes.data]]) {
+    for (const [table, data] of [['tasks', taskData], ['journals', journalData]]) {
       const store = stores[table];
       store.apply(data);
       store.synced = new Map(data.map((r) => [r.id, JSON.stringify(store.toRow(store.fromRow(r)))]));
@@ -1027,6 +1040,7 @@ $('#settingsBtn').addEventListener('click', () => {
   $('#accountEmail').textContent = user ? `로그인: ${user.email}${isMaster() ? ' (마스터)' : ''}` : '';
   $('#nameLabel').textContent = profileName ? `(${profileName})` : '';
   $('#masterTools').hidden = !isMaster();
+  if (isMaster()) renderBackupHint();
   settings.showModal();
 });
 
@@ -1076,7 +1090,10 @@ async function checkAccess() {
       renderAll();
     }
     saveCache();
-    if (isMaster()) refreshApprovals();
+    if (isMaster()) {
+      refreshApprovals();
+      remindBackup();
+    }
   } catch (err) {
     console.error('[access]', err);
     // 오프라인: 예전에 승인된 기기면 캐시로 계속 사용
@@ -1371,18 +1388,17 @@ async function buildWeeklyReport(mondayStr) {
   const s = start.toISOString();
   const e = end.toISOString();
 
-  const [XLSX, profRes, taskRes, journalRes] = await Promise.all([
+  const [XLSX, profRows, weekTasks, weekJournals] = await Promise.all([
     loadXlsx(),
-    sb.from('profiles').select('id, name, email'),
-    sb.from('tasks').select('*')
+    selectAll(() => sb.from('profiles').select('id, name, email').order('id')),
+    selectAll(() => sb.from('tasks').select('*')
       .or(`and(created_at.gte.${s},created_at.lt.${e}),and(done_at.gte.${s},done_at.lt.${e})`)
-      .order('created_at'),
-    sb.from('journals').select('*').gte('visit_date', mondayStr).lt('visit_date', ymd(end))
-      .order('visit_date').order('created_at'),
+      .order('created_at').order('id')),
+    selectAll(() => sb.from('journals').select('*').gte('visit_date', mondayStr).lt('visit_date', ymd(end))
+      .order('visit_date').order('created_at').order('id')),
   ]);
-  for (const res of [profRes, taskRes, journalRes]) if (res.error) throw res.error;
 
-  const names = new Map(profRes.data.map((p) => [p.id, p.name || p.email || '']));
+  const names = new Map(profRows.map((p) => [p.id, p.name || p.email || '']));
   const who = (id) => names.get(id) || '(이름 없음)';
   const inWeek = (iso) => iso && iso >= s && iso < e;
 
@@ -1392,11 +1408,11 @@ async function buildWeeklyReport(mondayStr) {
     if (!summary.has(id)) summary.set(id, { 등록: 0, 완료: 0, 일지: 0, 상: 0, 중: 0, 하: 0 });
     return summary.get(id);
   };
-  taskRes.data.forEach((t) => {
+  weekTasks.forEach((t) => {
     if (inWeek(t.created_at)) sum(t.user_id).등록++;
     if (inWeek(t.done_at)) sum(t.user_id).완료++;
   });
-  journalRes.data.forEach((j) => {
+  weekJournals.forEach((j) => {
     const row = sum(j.user_id);
     row.일지++;
     if (j.temperature) row[j.temperature]++;
@@ -1407,7 +1423,7 @@ async function buildWeeklyReport(mondayStr) {
     '감도 상': v.상, '감도 중': v.중, '감도 하': v.하,
   })).sort((a, b) => a.영업사원.localeCompare(b.영업사원, 'ko'));
 
-  const taskRows = taskRes.data.map((t) => ({
+  const taskRows = weekTasks.map((t) => ({
     영업사원: who(t.user_id),
     치과명: t.clinic || '',
     내용: t.text,
@@ -1417,7 +1433,7 @@ async function buildWeeklyReport(mondayStr) {
     완료일시: fmtDateTime(t.done_at),
   })).sort((a, b) => a.영업사원.localeCompare(b.영업사원, 'ko'));
 
-  const journalRows = journalRes.data.map((j) => ({
+  const journalRows = weekJournals.map((j) => ({
     영업사원: who(j.user_id),
     방문일: j.visit_date,
     요일: WEEKDAYS[parseYmd(j.visit_date).getDay()],
@@ -1465,6 +1481,153 @@ $('#reportForm').addEventListener('submit', async (e) => {
   } finally {
     btn.disabled = false;
     btn.textContent = '다운로드';
+  }
+});
+
+// ================= 전체 데이터 백업 (마스터) =================
+const BACKUP_KEY = 'last-backup-at';
+const BACKUP_REMIND_DAYS = 30;
+const fetchAll = (table, columns = '*', orderBy = 'created_at', key = 'id') =>
+  selectAll(() => sb.from(table).select(columns).order(orderBy).order(key));
+
+async function buildFullBackup() {
+  const [XLSX, profiles, taskRows, journalRows, boardRows] = await Promise.all([
+    loadXlsx(),
+    fetchAll('profiles', 'id, name, email, status, created_at'),
+    fetchAll('tasks'),
+    fetchAll('journals'),
+    fetchAll('board', 'kind, body, data, updated_at', 'kind', 'kind'),
+  ]);
+  const names = new Map(profiles.map((p) => [p.id, p.name || p.email || '']));
+  const who = (id) => names.get(id) || '(이름 없음)';
+  const byName = (a, b) => a.영업사원.localeCompare(b.영업사원, 'ko');
+  const STATUS = { pending: '승인 대기', approved: '승인', rejected: '거절' };
+
+  const profileSheet = profiles.map((p) => ({
+    이름: p.name || '', 이메일: p.email || '',
+    상태: MASTER_EMAILS.includes((p.email || '').toLowerCase()) ? '마스터' : (STATUS[p.status] || p.status || ''),
+    가입일시: fmtDateTime(p.created_at), ID: p.id,
+  }));
+
+  const taskSheet = taskRows.map((t) => ({
+    영업사원: who(t.user_id),
+    치과명: t.clinic || '',
+    내용: t.text,
+    상태: t.archived_at ? '아카이브' : (COL_NAMES[t.col] || t.col),
+    납기일: t.due || '',
+    등록일시: fmtDateTime(t.created_at),
+    완료일시: fmtDateTime(t.done_at),
+    아카이브일시: fmtDateTime(t.archived_at),
+    ID: t.id,
+    사용자ID: t.user_id,
+  })).sort((a, b) => byName(a, b) || a.등록일시.localeCompare(b.등록일시));
+
+  const journalSheet = journalRows.map((j) => ({
+    영업사원: who(j.user_id),
+    방문일: j.visit_date,
+    요일: WEEKDAYS[parseYmd(j.visit_date).getDay()],
+    지역: j.region || '',
+    치과명: j.clinic || '',
+    구분: clinicType(j),
+    감도: j.temperature || '',
+    내용: j.content || '',
+    작성일시: fmtDateTime(j.created_at),
+    ID: j.id,
+    사용자ID: j.user_id,
+  })).sort((a, b) => byName(a, b) || a.방문일.localeCompare(b.방문일));
+
+  const boardSheet = boardRows.map((r) => {
+    const d = r.data || {};
+    const discounts = PROMO_PKGS.filter(([k]) => d.discounts?.[k] > 0)
+      .map(([k, name]) => `${name} -${won(d.discounts[k])}원`).join(', ');
+    return {
+      종류: NOTE_LABELS[r.kind] || r.kind,
+      내용: r.body || '',
+      할인: discounts,
+      종료일: d.until || '',
+      수정일시: fmtDateTime(r.updated_at),
+    };
+  });
+
+  const now = new Date();
+  const infoSheet = [
+    { 항목: '백업 일시', 값: fmtDateTime(now.toISOString()) },
+    { 항목: '백업한 사람', 값: `${profileName || ''} (${user.email})` },
+    { 항목: '영업사원(계정)', 값: `${profileSheet.length}명` },
+    { 항목: '할일', 값: `${taskSheet.length}건 (아카이브 포함)` },
+    { 항목: '영업일지', 값: `${journalSheet.length}건` },
+    { 항목: '공지·프로모션', 값: `${boardSheet.length}건` },
+    { 항목: '참고', 값: 'ID·사용자ID 열은 복원할 때 쓰이니 지우지 마세요.' },
+  ];
+
+  const sheet = (rows, headers, widths) => {
+    const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+    ws['!cols'] = widths.map((wch) => ({ wch }));
+    return ws;
+  };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet(infoSheet, ['항목', '값'], [16, 50]), '안내');
+  XLSX.utils.book_append_sheet(wb, sheet(profileSheet, ['이름', '이메일', '상태', '가입일시', 'ID'], [12, 28, 10, 17, 38]), '영업사원');
+  XLSX.utils.book_append_sheet(wb, sheet(journalSheet,
+    ['영업사원', '방문일', '요일', '지역', '치과명', '구분', '감도', '내용', '작성일시', 'ID', '사용자ID'],
+    [12, 12, 6, 12, 20, 9, 6, 60, 17, 16, 38]), '영업일지');
+  XLSX.utils.book_append_sheet(wb, sheet(taskSheet,
+    ['영업사원', '치과명', '내용', '상태', '납기일', '등록일시', '완료일시', '아카이브일시', 'ID', '사용자ID'],
+    [12, 20, 50, 9, 12, 17, 17, 17, 16, 38]), '할일');
+  XLSX.utils.book_append_sheet(wb, sheet(boardSheet, ['종류', '내용', '할인', '종료일', '수정일시'], [10, 60, 40, 12, 17]), '공지·프로모션');
+
+  XLSX.writeFile(wb, `할일보드_전체백업_${ymd(now)}.xlsx`);
+  try {
+    localStorage.setItem(BACKUP_KEY, String(Date.now()));
+  } catch { /* 무시 */ }
+  return { profiles: profileSheet.length, tasks: taskSheet.length, journals: journalSheet.length };
+}
+
+function backupOverdue() {
+  let last = 0;
+  try {
+    last = Number(localStorage.getItem(BACKUP_KEY)) || 0;
+  } catch { /* 무시 */ }
+  return Date.now() - last > BACKUP_REMIND_DAYS * DAY_MS;
+}
+
+function renderBackupHint() {
+  let last = 0;
+  try {
+    last = Number(localStorage.getItem(BACKUP_KEY)) || 0;
+  } catch { /* 무시 */ }
+  const label = $('#backupLabel');
+  if (!last) label.textContent = '(아직 안 함)';
+  else label.textContent = `(마지막 ${new Date(last).getMonth() + 1}/${new Date(last).getDate()})`;
+  label.classList.toggle('warn-text', backupOverdue());
+}
+
+// 마스터: 마지막 백업 후 30일이 지나면 한 번 알림
+let backupReminded = false;
+function remindBackup() {
+  if (!isMaster() || backupReminded || !backupOverdue()) return;
+  backupReminded = true;
+  showToast('전체 데이터 백업을 한 지 30일이 지났어요. 설정에서 백업해 주세요.');
+}
+
+$('#backupBtn').addEventListener('click', async () => {
+  const btn = $('#backupBtn');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const label = btn.firstChild;
+  const original = label.textContent;
+  label.textContent = '💾 백업 파일 만드는 중… ';
+  try {
+    const r = await buildFullBackup();
+    settings.close();
+    showToast(`백업 완료: 영업사원 ${r.profiles}명 · 영업일지 ${r.journals}건 · 할일 ${r.tasks}건`);
+  } catch (err) {
+    console.error('[backup]', err);
+    showToast(`백업하지 못했어요: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    label.textContent = original;
+    renderBackupHint();
   }
 });
 

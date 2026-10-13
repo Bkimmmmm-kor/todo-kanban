@@ -381,3 +381,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sheet .approval-list .ap-approve { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .approval-section { margin: 14px 0 0; font-size: .8rem; font-weight: 700; color: var(--muted); }
 .approval-list:not(:empty) + .approval-empty { display: none; }
+
+/* 백업 */
+.sheet .muted.warn-text, .warn-text { color: var(--danger) !important; font-weight: 700; }

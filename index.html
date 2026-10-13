@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -248,6 +248,7 @@
       <button id="noticeEditBtn">📢 공지 작성 (마스터)</button>
       <button id="promoEditBtn">🎁 프로모션 작성 (마스터)</button>
       <button id="reportBtn">📊 주간 엑셀 다운로드 (마스터)</button>
+      <button id="backupBtn">💾 전체 데이터 백업 <span id="backupLabel" class="muted"></span></button>
     </div>
     <button id="archiveBtn">🗄️ 아카이브 <span id="archiveCount" class="muted"></span></button>
     <button id="exportBtn">📤 할일 백업 내보내기</button>
@@ -255,7 +256,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 13</p>
+    <p class="sheet-desc">앱 버전 14</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -296,7 +297,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=13"></script>
-  <script src="app.js?v=13"></script>
+  <script src="calc.js?v=14"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
