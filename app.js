@@ -5,7 +5,7 @@ const SUPABASE_URL = 'https://ggukxzqsvlmfaxefazjc.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j_wtAX2FkiL4CkoB78jA3Q_otkyQPzG';
 const APP_URL = location.origin + location.pathname;
 // 화면 표시용. 실제 권한은 서버의 is_master() 규칙이 판단
-const MASTER_EMAIL = 'jungbae900@realigner.co.kr';
+const MASTER_EMAILS = ['jungbae900@realigner.co.kr', 'jungbae900@naver.com'];
 const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 
 const ARCHIVE_DAYS = 30;
@@ -35,7 +35,7 @@ let journals = [];
 let notes = { notice: '', promo: '' }; // 공지 / 프로모션
 let activeCol = 'todo';
 
-const isMaster = () => user?.email?.toLowerCase() === MASTER_EMAIL;
+const isMaster = () => MASTER_EMAILS.includes(user?.email?.toLowerCase());
 
 function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

@@ -4,7 +4,7 @@
 -- 마스터 계정 확인 (로그인한 이메일로 판단)
 create or replace function public.is_master() returns boolean
 language sql stable set search_path = '' as $$
-  select coalesce(auth.jwt() ->> 'email', '') = 'jungbae900@realigner.co.kr'
+  select lower(coalesce(auth.jwt() ->> 'email', '')) in ('jungbae900@realigner.co.kr', 'jungbae900@naver.com')
 $$;
 
 -- ---------- 이름 (주간 보고서에 표시) ----------
