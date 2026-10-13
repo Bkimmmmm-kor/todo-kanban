@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -106,22 +106,31 @@
 
       <p class="field-label">치과 등급</p>
       <div class="segmented" id="gradeSeg">
+        <button type="button" data-value="family">Family</button>
         <button type="button" data-value="gold">Gold</button>
         <button type="button" data-value="platinum">Platinum</button>
       </div>
 
-      <div class="calc-head">
-        <span>환자명</span><span>상악 단계</span><span>하악 단계</span><span></span>
+      <label class="calc-field">환자명 (선택)
+        <input id="calcName" type="text" placeholder="예: 홍길동" autocomplete="off">
+      </label>
+      <div class="calc-stages">
+        <label class="calc-field">상악 stage
+          <input id="calcUpper" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off">
+        </label>
+        <label class="calc-field">하악 stage
+          <input id="calcLower" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off">
+        </label>
       </div>
-      <ul id="calcRows" class="calc-rows"></ul>
-      <button id="addPatientBtn" type="button" class="text-btn">＋ 환자 추가</button>
+      <p class="calc-hint">한쪽만 진행하면 다른 쪽은 비워 두세요 (편악).</p>
 
-      <div class="calc-result">
-        <p class="calc-result-label">환자수</p>
-        <p id="calcResult" class="calc-result-value">-</p>
-        <p id="calcNote" class="calc-note"></p>
+      <div id="calcOut" class="calc-out"></div>
+
+      <div class="calc-actions">
+        <button id="calcCopyBtn" type="button" class="text-btn" hidden>📋 견적 복사</button>
+        <button id="calcResetBtn" type="button" class="text-btn muted">입력 지우기</button>
       </div>
-      <button id="calcResetBtn" type="button" class="text-btn muted">입력 모두 지우기</button>
+      <p class="calc-source">「리얼라이너 제품·수가 소개서 2026」 기준 · VAT 포함</p>
     </main>
   </section>
 
@@ -218,7 +227,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 8</p>
+    <p class="sheet-desc">앱 버전 10</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -250,7 +259,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="calc.js?v=10"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

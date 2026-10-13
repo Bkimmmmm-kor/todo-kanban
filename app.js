@@ -143,7 +143,7 @@ function saveCache() {
   if (!user) return;
   try {
     localStorage.setItem(cacheKey(), JSON.stringify({
-      tasks, archive, journals, notes, profileName,
+      tasks, archive, journals, notes, profileName, priceData: priceTable,
       synced: Object.fromEntries(Object.entries(stores).map(([k, s]) => [k, [...s.synced]])),
     }));
   } catch { /* 저장 공간 부족 등: 서버 저장은 계속됨 */ }
@@ -158,6 +158,7 @@ function loadCache() {
     journals = data.journals || [];
     notes = data.notes || notes;
     profileName = data.profileName || '';
+    setPriceTable(data.priceData);
     // 예전 캐시(할일만 있던 버전)는 synced 가 배열
     const synced = Array.isArray(data.synced) ? { tasks: data.synced } : (data.synced || {});
     for (const [k, s] of Object.entries(stores)) s.synced = new Map(synced[k] || []);
@@ -224,11 +225,12 @@ async function pull() {
   try {
     if (!(await queuePush())) return;
     const uid = user.id;
-    const [taskRes, journalRes, boardRes] = await Promise.all([
+    const [taskRes, journalRes, boardRes, priceRes] = await Promise.all([
       // 마스터는 모든 사람 것을 볼 수 있으므로 내 것만 받음
       sb.from('tasks').select('*').eq('user_id', uid),
       sb.from('journals').select('*').eq('user_id', uid),
       sb.from('board').select('kind, body'),
+      sb.from('price_table').select('data').maybeSingle(),
     ]);
     for (const res of [taskRes, journalRes, boardRes]) if (res.error) throw res.error;
     if (user?.id !== uid) return; // 받는 사이 로그아웃
@@ -240,6 +242,9 @@ async function pull() {
     }
     notes = { notice: '', promo: '' };
     boardRes.data.forEach((r) => (notes[r.kind] = r.body || ''));
+    // 수가표는 없어도 나머지 동기화는 계속
+    if (priceRes.error) console.error('[sync] price', priceRes.error);
+    else setPriceTable(priceRes.data?.data);
     saveCache();
     renderAll();
     setSync('ok');
@@ -294,6 +299,7 @@ function setView(view) {
 $$('.bottom-nav button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 
 function renderAll() {
+  renderQuote();
   renderTasks();
   renderJournals();
   renderNotes();
@@ -760,11 +766,12 @@ $('#jDeleteBtn').addEventListener('click', () => {
 });
 
 // ================= 계산기 =================
-const CALC_KEY = 'calc-state';
-let calc = { grade: '', rows: [{ name: '', upper: '', lower: '' }] };
+// 수가 규칙은 calc.js 의 realignerQuote() 에 있음
+const CALC_KEY = 'calc-quote';
+let calc = { grade: 'gold', name: '', upper: '', lower: '' };
 try {
   const saved = JSON.parse(localStorage.getItem(CALC_KEY));
-  if (saved?.rows?.length) calc = saved;
+  if (saved && ['family', 'gold', 'platinum'].includes(saved.grade)) calc = { ...calc, ...saved };
 } catch { /* 무시 */ }
 
 function saveCalc() {
@@ -773,89 +780,112 @@ function saveCalc() {
   } catch { /* 무시 */ }
 }
 
-function renderCalcRows() {
-  $('#calcRows').replaceChildren(...calc.rows.map((row, i) => {
-    const li = document.createElement('li');
-    li.className = 'calc-row';
-    li.dataset.index = i;
-    const input = (field, placeholder, numeric) => {
-      const el = document.createElement('input');
-      el.dataset.field = field;
-      el.value = row[field];
-      el.placeholder = placeholder;
-      if (numeric) {
-        el.inputMode = 'numeric';
-        el.pattern = '[0-9]*';
-      }
-      return el;
-    };
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.textContent = '✕';
-    del.setAttribute('aria-label', '환자 삭제');
-    li.append(input('name', `환자 ${i + 1}`), input('upper', '상악', true), input('lower', '하악', true), del);
-    return li;
-  }));
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
 }
 
-function updateCalcResult() {
-  const toNum = (v) => (String(v).trim() === '' ? null : Number(v));
-  const patients = calc.rows
-    .map((r) => ({ name: r.name.trim(), upper: toNum(r.upper), lower: toNum(r.lower) }))
-    .filter((p) => p.name || p.upper !== null || p.lower !== null);
-  let result = null;
-  try {
-    result = calcPatientCount(calc.grade || null, patients);
-  } catch (err) {
-    console.error('[calc]', err);
+function quoteCard(q, sub = false) {
+  const card = el('div', `quote${sub ? ' sub' : ''}`);
+  card.append(
+    el('p', 'quote-pkg', q.name),
+    el('p', 'quote-price', `${won(q.price)}원`),
+    el('p', 'quote-formula', q.formula),
+  );
+  if (q.key !== 'unit') card.append(el('p', 'quote-meta', `보증 ${q.warranty} · 리파인먼트 ${q.refinement}`));
+  return card;
+}
+
+let lastQuoteText = '';
+
+function renderQuote() {
+  const out = $('#calcOut');
+  if (!priceTable) {
+    out.replaceChildren(el('p', 'calc-empty', user
+      ? '수가표를 불러오는 중이에요. 인터넷 연결을 확인해 주세요.'
+      : '로그인하면 수가표를 불러와요.'));
+    $('#calcCopyBtn').hidden = true;
+    lastQuoteText = '';
+    return;
   }
-  if (result && typeof result.count === 'number') {
-    $('#calcResult').textContent = `${Number(result.count.toFixed(2))}명`;
-    $('#calcNote').textContent = result.note || '';
+  const q = realignerQuote(calc.grade, calc.upper, calc.lower);
+  $('#calcCopyBtn').hidden = !q;
+  if (!q) {
+    out.replaceChildren(el('p', 'calc-empty', '상악·하악 stage를 입력하면 청구액이 나와요.'));
+    lastQuoteText = '';
+    return;
+  }
+  const stages = q.arches.map(([label, n]) => `${label} ${n}`).join(' · ');
+  const basis = q.single
+    ? `${stages} stage · 편악 진행 (패키지가 60%)`
+    : `${stages} stage → 큰 쪽 ${q.maxStage} stage 기준`;
+  const nodes = [el('p', 'quote-basis', `${q.grade} · ${basis}`)];
+  const lines = [`[리얼라이너 수가 안내] ${q.grade} 등급`];
+  if (calc.name.trim()) lines.push(`환자: ${calc.name.trim()}`);
+  lines.push(stages.replaceAll(' · ', ' / ') + ' stage' + (q.single ? ' (편악)' : ''));
+
+  if (q.choices) {
+    nodes.push(el('p', 'quote-basis', '40 stage 이상: 아래 두 패키지 중 선택 (추가 비용 없음)'));
+    q.choices.forEach((c, i) => nodes.push(quoteCard(c, i > 0)));
+    q.choices.forEach((c) => lines.push(`· ${c.name}: ${won(c.price)}원 (보증 ${c.warranty})`));
   } else {
-    $('#calcResult').textContent = '-';
-    $('#calcNote').textContent = `계산 규칙 준비 중이에요. (입력한 환자 ${patients.length}명)`;
+    nodes.push(quoteCard(q.main));
+    lines.push(`· ${q.main.name}: ${won(q.main.price)}원`);
+    lines.push(`  (${q.main.formula})`);
   }
+
+  const alt = q.alternative;
+  if (alt) {
+    const tip = el('div', 'quote-tip');
+    const benefit = alt.key === 'unit' ? '' : ` · 보증 ${alt.warranty}, 리파인먼트 ${alt.refinement}`;
+    tip.append('💡 ', el('strong', '', `${alt.name}`), ` 적용 시 ${won(alt.price)}원 — `,
+      el('strong', '', `${won(alt.saving)}원 절감`), benefit);
+    nodes.push(tip, quoteCard(alt, true));
+    lines.push(`· 추천 ${alt.name}: ${won(alt.price)}원 (${won(alt.saving)}원 절감${benefit})`);
+  }
+  lines.push('※ VAT 포함');
+  lastQuoteText = lines.join('\n');
+  out.replaceChildren(...nodes);
+}
+
+function syncCalcInputs() {
+  setSeg($('#gradeSeg'), calc.grade);
+  $('#calcName').value = calc.name;
+  $('#calcUpper').value = calc.upper;
+  $('#calcLower').value = calc.lower;
+  renderQuote();
 }
 
 bindSeg($('#gradeSeg'), (value) => {
   calc.grade = value;
   saveCalc();
-  updateCalcResult();
+  renderQuote();
 }, false);
 
-$('#calcRows').addEventListener('input', (e) => {
-  const field = e.target.dataset.field;
-  const i = Number(e.target.closest('.calc-row')?.dataset.index);
-  if (!field || Number.isNaN(i)) return;
-  if (field !== 'name') e.target.value = e.target.value.replace(/\D/g, '');
-  calc.rows[i][field] = e.target.value;
-  saveCalc();
-  updateCalcResult();
+[['#calcName', 'name'], ['#calcUpper', 'upper'], ['#calcLower', 'lower']].forEach(([sel, field]) => {
+  $(sel).addEventListener('input', (e) => {
+    if (field !== 'name') e.target.value = e.target.value.replace(/\D/g, '').slice(0, 3);
+    calc[field] = e.target.value;
+    saveCalc();
+    renderQuote();
+  });
 });
 
-$('#calcRows').addEventListener('click', (e) => {
-  if (e.target.tagName !== 'BUTTON') return;
-  const i = Number(e.target.closest('.calc-row').dataset.index);
-  calc.rows.splice(i, 1);
-  if (!calc.rows.length) calc.rows.push({ name: '', upper: '', lower: '' });
-  saveCalc();
-  renderCalcRows();
-  updateCalcResult();
-});
-
-$('#addPatientBtn').addEventListener('click', () => {
-  calc.rows.push({ name: '', upper: '', lower: '' });
-  saveCalc();
-  renderCalcRows();
-  $$('#calcRows .calc-row:last-child input')[0]?.focus();
+$('#calcCopyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(lastQuoteText);
+    showToast('견적을 복사했어요. 카톡에 붙여넣으면 돼요.');
+  } catch {
+    showToast('복사하지 못했어요.');
+  }
 });
 
 $('#calcResetBtn').addEventListener('click', () => {
-  calc = { grade: calc.grade, rows: [{ name: '', upper: '', lower: '' }] };
+  calc = { ...calc, name: '', upper: '', lower: '' };
   saveCalc();
-  renderCalcRows();
-  updateCalcResult();
+  syncCalcInputs();
 });
 
 // ================= 공지 / 프로모션 =================
@@ -1286,6 +1316,7 @@ function setUser(u) {
   journals = [];
   notes = { notice: '', promo: '' };
   profileName = '';
+  setPriceTable(null);
   Object.values(stores).forEach((s) => (s.synced = new Map()));
   setSync('');
   authScreen.hidden = !!user;
@@ -1314,9 +1345,7 @@ try {
   lastView = localStorage.getItem('last-view') || 'todo';
 } catch { /* 무시 */ }
 setView(lastView);
-renderCalcRows();
-setSeg($('#gradeSeg'), calc.grade);
-updateCalcResult();
+syncCalcInputs();
 renderAll();
 
 if (sb) {
