@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -185,10 +185,28 @@
     </form>
   </dialog>
 
+  <!-- 영업일지: 방문 유형 먼저 고르기 -->
+  <dialog id="visitTypeDialog" class="sheet">
+    <p class="sheet-title" tabindex="-1" autofocus>어떤 방문인가요?</p>
+    <div class="visit-choices">
+      <button type="button" data-visit="일반영업">
+        <span class="vc-icon">🚀</span><span class="vc-name">일반영업</span><span class="vc-desc">신규 치과 영업 · 첫 상담</span>
+      </button>
+      <button type="button" data-visit="관리방문">
+        <span class="vc-icon">🤝</span><span class="vc-name">관리방문</span><span class="vc-desc">기존 거래처 관리 · 정기 방문</span>
+      </button>
+    </div>
+    <button data-action="close" class="muted">취소</button>
+  </dialog>
+
   <!-- 영업일지 작성/수정 -->
   <dialog id="journalDialog" class="sheet tall">
     <form id="journalForm" method="dialog" class="edit-form" autocomplete="off">
       <p id="journalDialogTitle" class="sheet-title" tabindex="-1" autofocus>영업일지 작성</p>
+      <div class="segmented visit" id="jVisit">
+        <button type="button" data-value="일반영업">🚀 일반영업</button>
+        <button type="button" data-value="관리방문">🤝 관리방문</button>
+      </div>
       <label>방문일<input id="jDate" type="date" required></label>
       <div class="two-col">
         <label>지역<input id="jRegion" type="text" list="regionList" placeholder="예: 강남구"></label>
@@ -256,7 +274,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 14</p>
+    <p class="sheet-desc">앱 버전 15</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -297,7 +315,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=14"></script>
-  <script src="app.js?v=14"></script>
+  <script src="calc.js?v=15"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

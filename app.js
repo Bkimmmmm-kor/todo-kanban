@@ -87,6 +87,7 @@ function journalToRow(j) {
     region: j.region || null,
     clinic: j.clinic || null,
     clinic_type: j.type || null,
+    visit_type: j.visit || null,
     temperature: j.temp || null,
     content: j.content || null,
     created_at: toIso(j.createdAt),
@@ -100,6 +101,7 @@ function journalFromRow(r) {
     region: r.region || '',
     clinic: r.clinic || '',
     type: clinicType(r),
+    visit: VISIT_TYPES.includes(r.visit_type) ? r.visit_type : '',
     temp: r.temperature || '',
     content: r.content || '',
     createdAt: toMs(r.created_at),
@@ -108,6 +110,8 @@ function journalFromRow(r) {
 
 // 치과 구분: 교정과 / 교정페이 / 일반 (예전 일지의 교정과 O/X 도 변환)
 const CLINIC_TYPES = ['교정과', '교정페이', '일반'];
+// 방문 유형: 일반영업(신규 영업) / 관리방문(기존 거래처 관리)
+const VISIT_TYPES = ['일반영업', '관리방문'];
 function clinicType(r) {
   if (CLINIC_TYPES.includes(r.clinic_type)) return r.clinic_type;
   if (r.is_ortho === true) return '교정과';
@@ -448,10 +452,18 @@ function formatTime(ms) {
   return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
 }
 
+// 납기 빠른 순 → 납기 없는 카드는 아래 → 같으면 최근에 옮긴 순
+function byDue(a, b) {
+  if (a.due && b.due) return a.due.localeCompare(b.due) || (b.movedAt || 0) - (a.movedAt || 0);
+  if (a.due || b.due) return a.due ? -1 : 1;
+  return (b.movedAt || b.createdAt) - (a.movedAt || a.createdAt);
+}
+
 function renderTasks() {
   for (const col of COLS) {
     const list = $(`[data-list="${col}"]`);
     const items = tasks.filter((t) => t.col === col);
+    if (col !== 'done') items.sort(byDue);
     list.replaceChildren(...items.map(cardEl));
     $(`[data-count="${col}"]`).textContent = items.length;
     $(`.tab[data-col="${col}"]`).classList.toggle('has-new', items.some((t) => t.isNew));
@@ -700,6 +712,7 @@ function renderJournals() {
     clinic.textContent = j.clinic || '(치과명 없음)';
     head.append(clinic);
     if (j.region) head.append(tagEl(`📍 ${j.region}`));
+    if (j.visit) head.append(tagEl(j.visit, j.visit === '관리방문' ? 'visit-care' : 'visit-sales'));
     if (j.type) head.append(tagEl(j.type));
     if (j.temp) head.append(tagEl(`감도 ${j.temp}`, `temp-${j.temp}`));
     li.append(head);
@@ -736,10 +749,11 @@ let editJournalId = null;
 bindSeg($('#jType'));
 bindSeg($('#jTemp'));
 
-function openJournal(id = null) {
+function openJournal(id = null, visit = '') {
   const j = journals.find((x) => x.id === id);
   editJournalId = j ? j.id : null;
   $('#journalDialogTitle').textContent = j ? '영업일지 수정' : '영업일지 작성';
+  setSeg($('#jVisit'), j ? j.visit || '' : visit);
   $('#jDate').value = j ? j.date : ymd(new Date());
   $('#jRegion').value = j?.region || '';
   $('#jClinic').value = j?.clinic || '';
@@ -750,7 +764,16 @@ function openJournal(id = null) {
   journalDialog.showModal();
 }
 
-$('#newJournalBtn').addEventListener('click', () => openJournal());
+// [＋ 영업일지 작성] → 먼저 일반영업 / 관리방문 선택
+const visitTypeDialog = $('#visitTypeDialog');
+$('#newJournalBtn').addEventListener('click', () => visitTypeDialog.showModal());
+visitTypeDialog.addEventListener('click', (e) => {
+  const visit = e.target.closest('[data-visit]')?.dataset.visit;
+  if (!visit) return;
+  visitTypeDialog.close();
+  openJournal(null, visit);
+});
+bindSeg($('#jVisit'), null, false);
 $('#journalList').addEventListener('click', (e) => {
   const item = e.target.closest('.journal-item');
   if (item) openJournal(item.dataset.id);
@@ -761,6 +784,7 @@ $('#journalForm').addEventListener('submit', (e) => {
     date: $('#jDate').value || ymd(new Date()),
     region: $('#jRegion').value.trim(),
     clinic: $('#jClinic').value.trim(),
+    visit: segValue($('#jVisit')),
     type: segValue($('#jType')),
     temp: segValue($('#jTemp')),
     content: $('#jContent').value.trim(),
@@ -1405,7 +1429,7 @@ async function buildWeeklyReport(mondayStr) {
   // 영업사원별 요약
   const summary = new Map();
   const sum = (id) => {
-    if (!summary.has(id)) summary.set(id, { 등록: 0, 완료: 0, 일지: 0, 상: 0, 중: 0, 하: 0 });
+    if (!summary.has(id)) summary.set(id, { 등록: 0, 완료: 0, 일지: 0, 일반영업: 0, 관리방문: 0, 상: 0, 중: 0, 하: 0 });
     return summary.get(id);
   };
   weekTasks.forEach((t) => {
@@ -1415,11 +1439,13 @@ async function buildWeeklyReport(mondayStr) {
   weekJournals.forEach((j) => {
     const row = sum(j.user_id);
     row.일지++;
+    if (VISIT_TYPES.includes(j.visit_type)) row[j.visit_type]++;
     if (j.temperature) row[j.temperature]++;
   });
 
   const summaryRows = [...summary].map(([id, v]) => ({
     영업사원: who(id), '할일 등록': v.등록, '할일 완료': v.완료, 영업일지: v.일지,
+    일반영업: v.일반영업, 관리방문: v.관리방문,
     '감도 상': v.상, '감도 중': v.중, '감도 하': v.하,
   })).sort((a, b) => a.영업사원.localeCompare(b.영업사원, 'ko'));
 
@@ -1439,6 +1465,7 @@ async function buildWeeklyReport(mondayStr) {
     요일: WEEKDAYS[parseYmd(j.visit_date).getDay()],
     지역: j.region || '',
     치과명: j.clinic || '',
+    방문유형: j.visit_type || '',
     구분: clinicType(j),
     감도: j.temperature || '',
     내용: j.content || '',
@@ -1451,11 +1478,11 @@ async function buildWeeklyReport(mondayStr) {
   };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, sheet(summaryRows,
-    ['영업사원', '할일 등록', '할일 완료', '영업일지', '감도 상', '감도 중', '감도 하'],
-    [14, 10, 10, 10, 8, 8, 8]), '요약');
+    ['영업사원', '할일 등록', '할일 완료', '영업일지', '일반영업', '관리방문', '감도 상', '감도 중', '감도 하'],
+    [14, 10, 10, 10, 10, 10, 8, 8, 8]), '요약');
   XLSX.utils.book_append_sheet(wb, sheet(journalRows,
-    ['영업사원', '방문일', '요일', '지역', '치과명', '구분', '감도', '내용'],
-    [12, 12, 6, 12, 20, 8, 6, 60]), '영업일지');
+    ['영업사원', '방문일', '요일', '방문유형', '지역', '치과명', '구분', '감도', '내용'],
+    [12, 12, 6, 10, 12, 20, 8, 6, 60]), '영업일지');
   XLSX.utils.book_append_sheet(wb, sheet(taskRows,
     ['영업사원', '치과명', '내용', '상태', '납기일', '등록일시', '완료일시'],
     [12, 20, 50, 8, 12, 17, 17]), '할일');
@@ -1528,6 +1555,7 @@ async function buildFullBackup() {
     요일: WEEKDAYS[parseYmd(j.visit_date).getDay()],
     지역: j.region || '',
     치과명: j.clinic || '',
+    방문유형: j.visit_type || '',
     구분: clinicType(j),
     감도: j.temperature || '',
     내용: j.content || '',
@@ -1569,8 +1597,8 @@ async function buildFullBackup() {
   XLSX.utils.book_append_sheet(wb, sheet(infoSheet, ['항목', '값'], [16, 50]), '안내');
   XLSX.utils.book_append_sheet(wb, sheet(profileSheet, ['이름', '이메일', '상태', '가입일시', 'ID'], [12, 28, 10, 17, 38]), '영업사원');
   XLSX.utils.book_append_sheet(wb, sheet(journalSheet,
-    ['영업사원', '방문일', '요일', '지역', '치과명', '구분', '감도', '내용', '작성일시', 'ID', '사용자ID'],
-    [12, 12, 6, 12, 20, 9, 6, 60, 17, 16, 38]), '영업일지');
+    ['영업사원', '방문일', '요일', '방문유형', '지역', '치과명', '구분', '감도', '내용', '작성일시', 'ID', '사용자ID'],
+    [12, 12, 6, 10, 12, 20, 9, 6, 60, 17, 16, 38]), '영업일지');
   XLSX.utils.book_append_sheet(wb, sheet(taskSheet,
     ['영업사원', '치과명', '내용', '상태', '납기일', '등록일시', '완료일시', '아카이브일시', 'ID', '사용자ID'],
     [12, 20, 50, 9, 12, 17, 17, 17, 16, 38]), '할일');
