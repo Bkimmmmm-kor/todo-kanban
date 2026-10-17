@@ -12,7 +12,7 @@ const ARCHIVE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COLS = ['todo', 'doing', 'done'];
 const COL_NAMES = { todo: '할 일', doing: '진행 중', done: '완료' };
-const VIEWS = { todo: '할일', journal: '영업일지', calc: '계산기' };
+const VIEWS = { todo: '할일', journal: '영업일지', calc: '세일즈가이드' };
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const LONG_PRESS_MS = 500;
 
@@ -547,7 +547,7 @@ function setActiveCol(col) {
     }
   }
   activeCol = col;
-  $$('.tab').forEach((tab) => tab.setAttribute('aria-selected', tab.dataset.col === col));
+  $$('.tab[data-col]').forEach((tab) => tab.setAttribute('aria-selected', tab.dataset.col === col));
   $$('.column').forEach((c) => c.classList.toggle('active', c.dataset.col === col));
 }
 
@@ -641,7 +641,7 @@ cardMenu.addEventListener('click', (e) => {
   else if (COLS.includes(action)) moveTask(menuTaskId, action);
 });
 
-$$('.tab').forEach((tab) => tab.addEventListener('click', () => setActiveCol(tab.dataset.col)));
+$$('.tab[data-col]').forEach((tab) => tab.addEventListener('click', () => setActiveCol(tab.dataset.col)));
 
 $('#addForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -948,6 +948,111 @@ $('#calcResetBtn').addEventListener('click', () => {
   saveCalc();
   syncCalcInputs();
 });
+
+// ================= 세일즈가이드: 안쪽 탭 =================
+const GUIDE_KEY = 'guide-tab';
+function setGuideTab(tab) {
+  if (!['calc', 'date', 'ment'].includes(tab)) tab = 'calc';
+  $$('#guideTabs .tab').forEach((b) => b.setAttribute('aria-selected', b.dataset.guide === tab));
+  $$('[data-guide-pane]').forEach((p) => (p.hidden = p.dataset.guidePane !== tab));
+  if (tab === 'date') renderDateCalc();
+  try {
+    localStorage.setItem(GUIDE_KEY, tab);
+  } catch { /* 무시 */ }
+}
+$('#guideTabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-guide]')?.dataset.guide;
+  if (tab) setGuideTab(tab);
+});
+
+// ================= 날짜계산기 (영업일 기준) =================
+// 공휴일(대체공휴일 포함). 해마다 다음 해 날짜를 추가해 주세요.
+const HOLIDAYS = new Set([
+  // 2026
+  '2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18', '2026-03-02', '2026-05-01', '2026-05-05',
+  '2026-05-25', '2026-06-03', '2026-07-17', '2026-08-17', '2026-09-24', '2026-09-25', '2026-09-28',
+  '2026-10-05', '2026-10-09', '2026-12-25',
+  // 2027
+  '2027-01-01', '2027-02-08', '2027-02-09', '2027-03-01', '2027-05-03', '2027-05-05', '2027-05-13',
+  '2027-07-19', '2027-08-16', '2027-09-14', '2027-09-15', '2027-09-16', '2027-10-04', '2027-10-11',
+  '2027-12-27',
+]);
+const DIAG_DAYS = 4; // 진단: 접수 +4영업일 업로드
+const MAKE_DAYS = 4; // 제작: 접수 +4영업일 출고, 택배 +1~2영업일 도착
+
+const isBizDay = (d) => d.getDay() !== 0 && d.getDay() !== 6 && !HOLIDAYS.has(ymd(d));
+function addBizDays(date, n) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  while (n > 0) {
+    d.setDate(d.getDate() + 1);
+    if (isBizDay(d)) n--;
+  }
+  return d;
+}
+const mdw = (d) => `${d.getMonth() + 1}월 ${d.getDate()}일(${WEEKDAYS[d.getDay()]})`;
+
+let dateKind = 'diag';
+let dateText = '';
+
+function renderDateCalc() {
+  const input = $('#dateBase');
+  const today = ymd(new Date());
+  if (!input.value) input.value = today;
+  $('#dateTodayBtn').hidden = input.value === today;
+  setSeg($('#dateKindSeg'), dateKind);
+
+  const base = parseYmd(input.value);
+  const baseWord = input.value === today ? '오늘 날짜로' : `${mdw(base)}에`;
+  const rows = [['접수일', mdw(base)]];
+  if (dateKind === 'diag') {
+    const up = addBizDays(base, DIAG_DAYS);
+    rows.push(['업로드 예상', mdw(up)]);
+    dateText = `${baseWord} 접수하여 ${mdw(up)} 업로드 예상됩니다. 진단이 완료되면 알림톡으로 안내 도와드리겠습니다.`;
+  } else {
+    const ship = addBizDays(base, MAKE_DAYS);
+    const a1 = addBizDays(ship, 1);
+    const a2 = addBizDays(ship, 2);
+    rows.push(['출고 예상', mdw(ship)], ['치과 도착', `${mdw(a1)} ~ ${mdw(a2)}`]);
+    dateText = `${baseWord} 접수하여 ${mdw(ship)} 출고 예상되며, ${mdw(a1)}~${mdw(a2)} 치과 도착 예상됩니다.`;
+  }
+  const card = el('div', 'date-card');
+  rows.forEach(([k, v], i) => {
+    const row = el('div', i ? 'date-row hl' : 'date-row');
+    row.append(el('span', 'date-k', k), el('span', 'date-v', v));
+    card.append(row);
+  });
+  const out = $('#dateOut');
+  out.replaceChildren(card, el('p', 'date-msg', dateText));
+  if (!isBizDay(base)) out.append(el('p', 'quote-basis', '※ 접수일이 휴일이라 다음 영업일부터 세었어요.'));
+}
+
+bindSeg($('#dateKindSeg'), (v) => {
+  dateKind = v;
+  renderDateCalc();
+}, false);
+$('#dateBase').addEventListener('change', renderDateCalc);
+$('#dateTodayBtn').addEventListener('click', () => {
+  $('#dateBase').value = ymd(new Date());
+  renderDateCalc();
+});
+$('#dateCopyBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(dateText);
+    showToast('안내 문구를 복사했어요. 카톡에 붙여넣으면 돼요.');
+  } catch {
+    showToast('복사하지 못했어요.');
+  }
+});
+// 메뉴를 다시 열면 날짜를 오늘로
+$$('.bottom-nav button[data-view="calc"]').forEach((b) => b.addEventListener('click', () => {
+  $('#dateBase').value = '';
+  if (!$('[data-guide-pane="date"]').hidden) renderDateCalc();
+}));
+try {
+  setGuideTab(localStorage.getItem(GUIDE_KEY));
+} catch {
+  setGuideTab('calc');
+}
 
 // ================= 공지 / 프로모션 =================
 const NOTE_LABELS = { notice: '공지', promo: '프로모션' };

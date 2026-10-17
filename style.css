@@ -405,3 +405,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* 시트 제목은 초점 테두리 숨김 (창이 열릴 때 키보드가 뜨지 않도록 제목에 초점) */
 .sheet-title:focus { outline: none; }
+
+/* 세일즈가이드 안쪽 탭 */
+.guide-tabs .tab { font-size: .9rem; padding-left: 4px; padding-right: 4px; word-break: keep-all; }
+.guide-tabs .tab[aria-selected="true"] { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+
+/* 날짜계산기 */
+.date-card { padding: 6px 18px; border-radius: 16px; background: var(--surface); border: 2px solid var(--accent); }
+.date-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.date-row:first-child { border-top: 0; }
+.date-k { color: var(--muted); font-size: .9rem; white-space: nowrap; }
+.date-v { font-weight: 700; text-align: right; word-break: keep-all; }
+.date-row.hl .date-v { color: var(--accent); font-size: 1.1rem; }
+.date-msg {
+  margin: 0; padding: 14px 16px; border-radius: 12px; background: var(--bg); border: 1px dashed var(--border);
+  line-height: 1.6; word-break: keep-all;
+}
+#dateTodayBtn { margin-top: 6px; }
+
+/* 공사 중 */
+.coming-soon { padding: 64px 16px; text-align: center; }
+.coming-soon .cs-icon { font-size: 4rem; }
+.coming-soon .cs-title { margin: 12px 0 4px; font-size: 1.2rem; font-weight: 800; }
+.coming-soon .cs-desc { margin: 0; color: var(--muted); }
+@media (min-width: 760px) { .tabs.guide-tabs { display: flex; } }

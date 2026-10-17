@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=15">
+  <link rel="stylesheet" href="style.css?v=16">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -109,9 +109,16 @@
     </div>
   </section>
 
-  <!-- ========== 계산기 ========== -->
+  <!-- ========== 세일즈가이드 ========== -->
   <section class="view" data-view="calc" hidden>
-    <main class="scroll calc">
+    <nav class="tabs guide-tabs" id="guideTabs">
+      <button class="tab" data-guide="calc">🧮 계산기</button>
+      <button class="tab" data-guide="date">📅 날짜계산기</button>
+      <button class="tab" data-guide="ment">💬 자주쓰는멘트</button>
+    </nav>
+
+    <!-- 계산기 -->
+    <main class="scroll calc" data-guide-pane="calc">
       <div class="board-note promo" data-kind="promo" hidden>
         <span class="note-icon">🎁</span>
         <div class="note-text">
@@ -148,13 +155,43 @@
       </div>
       <p class="calc-source">「리얼라이너 제품·수가 소개서 2026」 기준 · VAT 포함</p>
     </main>
+
+    <!-- 날짜계산기 (영업일 기준: 토·일·공휴일 제외) -->
+    <main class="scroll calc" data-guide-pane="date" hidden>
+      <p class="field-label">어떤 접수인가요?</p>
+      <div class="segmented" id="dateKindSeg">
+        <button type="button" data-value="diag">🔍 진단</button>
+        <button type="button" data-value="make">🏭 제작</button>
+      </div>
+
+      <label class="calc-field">접수일
+        <input id="dateBase" type="date">
+      </label>
+      <button id="dateTodayBtn" type="button" class="text-btn muted" hidden>오늘로 되돌리기</button>
+
+      <div id="dateOut" class="calc-out"></div>
+
+      <div class="calc-actions">
+        <button id="dateCopyBtn" type="button" class="text-btn">📋 안내 문구 복사</button>
+      </div>
+      <p class="calc-source">영업일 기준 · 토·일·공휴일 제외</p>
+    </main>
+
+    <!-- 자주쓰는멘트 -->
+    <main class="scroll calc" data-guide-pane="ment" hidden>
+      <div class="coming-soon">
+        <span class="cs-icon">🚧</span>
+        <p class="cs-title">공사 중이에요</p>
+        <p class="cs-desc">자주 쓰는 안내 멘트는 개발 예정이에요.</p>
+      </div>
+    </main>
   </section>
 
   <!-- 아래 메뉴 -->
   <nav class="bottom-nav">
     <button data-view="todo">✅<span>할일</span></button>
     <button data-view="journal">📝<span>영업일지</span></button>
-    <button data-view="calc">🧮<span>계산기</span></button>
+    <button data-view="calc">🧭<span>세일즈가이드</span></button>
   </nav>
 
   <datalist id="clinicList"></datalist>
@@ -274,7 +311,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 15</p>
+    <p class="sheet-desc">앱 버전 16</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -315,7 +352,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=15"></script>
-  <script src="app.js?v=15"></script>
+  <script src="calc.js?v=16"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>
