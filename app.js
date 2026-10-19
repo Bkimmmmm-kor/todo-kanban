@@ -995,6 +995,8 @@ function addBizDays(date, n, ok = isBizDay) {
 const mdw = (d) => `${d.getMonth() + 1}월 ${d.getDate()}일(${WEEKDAYS[d.getDay()]})`;
 
 let dateKind = 'diag';
+let dateCount = ''; // same: 접수일부터 셈 / next: 다음 날부터 셈 / '': 지금 시각으로 자동
+const DATE_CUTOFF_HOUR = 11; // 이 시각 전이면 당일 카운팅이 기본
 let dateText = '';
 
 function renderDateCalc() {
@@ -1003,16 +1005,20 @@ function renderDateCalc() {
   if (!input.value) input.value = today;
   $('#dateTodayBtn').hidden = input.value === today;
   setSeg($('#dateKindSeg'), dateKind);
+  const count = dateCount || (new Date().getHours() < DATE_CUTOFF_HOUR ? 'same' : 'next');
+  setSeg($('#dateCountSeg'), count);
 
   const base = parseYmd(input.value);
+  // 당일 카운팅: 접수일이 영업일이면 그날을 1일째로 셈 → 전날에서 출발
+  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate() - (count === 'same' ? 1 : 0));
   const baseWord = input.value === today ? '오늘 날짜로' : `${mdw(base)}에`;
   const rows = [['접수일', mdw(base)]];
   if (dateKind === 'diag') {
-    const up = addBizDays(base, DIAG_DAYS);
+    const up = addBizDays(start, DIAG_DAYS);
     rows.push(['업로드 예상', mdw(up)]);
     dateText = `${baseWord} 접수하여 ${mdw(up)} 업로드 예상됩니다. 진단이 완료되면 알림톡으로 안내 도와드리겠습니다.`;
   } else {
-    const ship = addBizDays(base, MAKE_DAYS);
+    const ship = addBizDays(start, MAKE_DAYS);
     const a1 = addBizDays(ship, 1, isDeliveryDay);
     const a2 = addBizDays(ship, 2, isDeliveryDay);
     rows.push(['출고 예상', mdw(ship)], ['치과 도착', `${mdw(a1)} ~ ${mdw(a2)}`]);
@@ -1027,10 +1033,15 @@ function renderDateCalc() {
   const out = $('#dateOut');
   out.replaceChildren(card, el('p', 'date-msg', dateText));
   if (!isBizDay(base)) out.append(el('p', 'quote-basis', '※ 접수일이 휴일이라 다음 영업일부터 세었어요.'));
+  else out.append(el('p', 'quote-basis', count === 'same' ? '※ 접수일(당일)을 1일째로 세었어요.' : '※ 접수 다음 영업일을 1일째로 세었어요.'));
 }
 
 bindSeg($('#dateKindSeg'), (v) => {
   dateKind = v;
+  renderDateCalc();
+}, false);
+bindSeg($('#dateCountSeg'), (v) => {
+  dateCount = v;
   renderDateCalc();
 }, false);
 $('#dateBase').addEventListener('change', renderDateCalc);
@@ -1049,6 +1060,7 @@ $('#dateCopyBtn').addEventListener('click', async () => {
 // 메뉴를 다시 열면 날짜를 오늘로
 $$('.bottom-nav button[data-view="calc"]').forEach((b) => b.addEventListener('click', () => {
   $('#dateBase').value = '';
+  dateCount = '';
   if (!$('[data-guide-pane="date"]').hidden) renderDateCalc();
 }));
 try {

@@ -429,3 +429,5 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .coming-soon .cs-title { margin: 12px 0 4px; font-size: 1.2rem; font-weight: 800; }
 .coming-soon .cs-desc { margin: 0; color: var(--muted); }
 @media (min-width: 760px) { .tabs.guide-tabs { display: flex; } }
+.segmented.date-count { margin-top: 12px; }
+.segmented.date-count button { height: 42px; font-size: .95rem; }

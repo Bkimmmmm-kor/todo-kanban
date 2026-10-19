@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -168,6 +168,11 @@
         <input id="dateBase" type="date">
       </label>
       <button id="dateTodayBtn" type="button" class="text-btn muted" hidden>오늘로 되돌리기</button>
+      <div class="segmented date-count" id="dateCountSeg">
+        <button type="button" data-value="same">당일 카운팅</button>
+        <button type="button" data-value="next">익일 카운팅</button>
+      </div>
+      <p class="calc-hint">11시 전 접수는 당일부터, 그 뒤 접수는 다음 날부터 세요.</p>
 
       <div id="dateOut" class="calc-out"></div>
 
@@ -311,7 +316,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 17</p>
+    <p class="sheet-desc">앱 버전 18</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -352,7 +357,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=17"></script>
-  <script src="app.js?v=17"></script>
+  <script src="calc.js?v=18"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>
