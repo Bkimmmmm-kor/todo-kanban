@@ -262,6 +262,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: block; width: 100%; padding: 12px; border: 0; border-radius: 10px;
   background: none; font-size: 1.02rem; text-align: left;
 }
+.drawer button[hidden] { display: none; }
 .drawer button[aria-current="page"] { background: rgba(37, 99, 235, .12); color: var(--accent); font-weight: 700; }
 
 /* 공지 / 프로모션 */

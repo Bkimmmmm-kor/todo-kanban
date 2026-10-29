@@ -7,6 +7,7 @@ const APP_URL = location.origin + location.pathname;
 // 화면 표시용. 실제 권한은 서버의 is_master() 규칙이 판단
 const MASTER_EMAILS = ['jungbae900@realigner.co.kr', 'jungbae900@naver.com'];
 const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+const PPTX_URL = 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';
 
 const ARCHIVE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -385,7 +386,7 @@ function markDrawer() {
 }
 
 $('#menuBtn').addEventListener('click', () => {
-  $('#drawerMaster').hidden = !isMaster();
+  $('#reportBtn').hidden = !isMaster();
   markDrawer();
   drawer.showModal();
 });
@@ -1658,7 +1659,14 @@ function mondayOf(date) {
   return d;
 }
 
-$('#reportBtn').addEventListener('click', () => {
+// 주간 보고 주 선택 (kind: xlsx 주간 엑셀 · ppt 주간보고 PPT)
+let reportKind = 'xlsx';
+function openReport(kind) {
+  reportKind = kind;
+  $('#reportTitle').textContent = kind === 'ppt' ? '주간보고 PPT' : '주간 엑셀 다운로드';
+  $('#reportDesc').textContent = kind === 'ppt'
+    ? `선택한 주(월~일)의 보고와 그다음 주 계획을 ${isMaster() ? '영업사원별로 ' : ''}PPT로 받아요.`
+    : '선택한 주(월~일)의 전체 영업사원 할일·영업일지·협업일지를 엑셀로 받아요.';
   const thisMonday = mondayOf(new Date());
   const options = [];
   for (let i = 0; i < 8; i++) {
@@ -1677,24 +1685,29 @@ $('#reportBtn').addEventListener('click', () => {
   if ([0, 1].includes(new Date().getDay())) $('#reportWeek').selectedIndex = 1;
   drawer.close();
   reportDialog.showModal();
-});
+}
+$('#reportBtn').addEventListener('click', () => openReport('xlsx'));
+$('#pptBtn').addEventListener('click', () => openReport('ppt'));
 
-let xlsxLoading = null;
-function loadXlsx() {
-  if (window.XLSX) return Promise.resolve(window.XLSX);
-  xlsxLoading ||= new Promise((resolve, reject) => {
+// 엑셀·PPT 도구는 필요할 때만 불러옴
+const libLoading = {};
+function loadLib(url, name, label) {
+  if (window[name]) return Promise.resolve(window[name]);
+  libLoading[name] ||= new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = XLSX_URL;
+    s.src = url;
     s.crossOrigin = 'anonymous';
-    s.onload = () => resolve(window.XLSX);
+    s.onload = () => resolve(window[name]);
     s.onerror = () => {
-      xlsxLoading = null;
-      reject(new Error('엑셀 도구를 불러오지 못했어요.'));
+      libLoading[name] = null;
+      reject(new Error(`${label} 도구를 불러오지 못했어요.`));
     };
     document.head.append(s);
   });
-  return xlsxLoading;
+  return libLoading[name];
 }
+const loadXlsx = () => loadLib(XLSX_URL, 'XLSX', '엑셀');
+const loadPptx = () => loadLib(PPTX_URL, 'PptxGenJS', 'PPT');
 
 const fmtDateTime = (iso) => {
   if (!iso) return '';
@@ -1702,15 +1715,16 @@ const fmtDateTime = (iso) => {
   return `${ymd(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-async function buildWeeklyReport(mondayStr) {
+// 주간 보고(엑셀·PPT) 공통: 선택한 주(월~일)의 할일·영업일지·협업일지
+// 마스터는 전원 것, 영업사원은 서버 규칙(RLS)상 자기 것만 받음
+async function fetchWeek(mondayStr) {
   const start = parseYmd(mondayStr);
   const end = new Date(start);
   end.setDate(end.getDate() + 7);
   const s = start.toISOString();
   const e = end.toISOString();
 
-  const [XLSX, profRows, weekTasks, weekJournals, weekCollabs] = await Promise.all([
-    loadXlsx(),
+  const [profRows, weekTasks, weekJournals, weekCollabs] = await Promise.all([
     selectAll(() => sb.from('profiles').select('id, name, email').order('id')),
     selectAll(() => sb.from('tasks').select('*')
       .or(`and(created_at.gte.${s},created_at.lt.${e}),and(done_at.gte.${s},done_at.lt.${e})`)
@@ -1722,8 +1736,18 @@ async function buildWeeklyReport(mondayStr) {
   ]);
 
   const names = new Map(profRows.map((p) => [p.id, p.name || p.email || '']));
-  const who = (id) => names.get(id) || '(이름 없음)';
-  const inWeek = (iso) => iso && iso >= s && iso < e;
+  return {
+    start, weekTasks, weekJournals, weekCollabs,
+    who: (id) => names.get(id) || '(이름 없음)',
+    inWeek: (iso) => iso && iso >= s && iso < e,
+  };
+}
+
+async function buildWeeklyReport(mondayStr) {
+  const [XLSX, { start, weekTasks, weekJournals, weekCollabs, who, inWeek }] = await Promise.all([
+    loadXlsx(),
+    fetchWeek(mondayStr),
+  ]);
 
   // 영업사원별 요약
   const summary = new Map();
@@ -1806,18 +1830,160 @@ async function buildWeeklyReport(mondayStr) {
   return { tasks: taskRows.length, journals: journalRows.length, collabs: collabRows.length };
 }
 
+// ---------- 주간보고 PPT: 영업사원별 1장(지난주 보고) + 1장(다음주 계획, 있을 때만) ----------
+const PPT = {
+  font: 'Malgun Gothic', accent: '2563EB', text: '111827', muted: '6B7280',
+  soft: 'F3F4F6', line: 'E5E7EB', danger: 'DC2626',
+};
+const md = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS[d.getDay()]})`;
+const clip = (text, n) => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
+// 목록이 길면 앞부분만 싣고 나머지는 '외 N건'
+const fitLines = (lines, max) => (lines.length > max
+  ? [...lines.slice(0, max - 1), `외 ${lines.length - max + 1}건 (자세한 내용은 주간 엑셀)`]
+  : lines);
+
+function pptHeader(slide, pptx, title, period) {
+  slide.addText(title, { x: 0.5, y: 0.35, w: 8.5, h: 0.6, fontSize: 24, bold: true, color: PPT.text });
+  slide.addText(period, { x: 8.8, y: 0.4, w: 4.03, h: 0.5, fontSize: 14, color: PPT.muted, align: 'right' });
+  slide.addShape(pptx.ShapeType.line, { x: 0.5, y: 1.05, w: 12.33, h: 0, line: { color: PPT.accent, width: 2 } });
+}
+
+// 한 항목이 한 줄에 들어가도록 자름 (11pt 한글 기준 1인치에 약 6자)
+function pptSection(slide, title, lines, box, empty) {
+  slide.addText(title, { x: box.x, y: box.y, w: box.w, h: 0.35, fontSize: 14, bold: true, color: PPT.text });
+  const maxChars = Math.floor(box.w * 6.2) - 3;
+  const body = lines.length
+    ? lines.map((text) => ({ text: clip(text, maxChars), options: { bullet: true, breakLine: true } }))
+    : [{ text: empty, options: { color: PPT.muted } }];
+  slide.addText(body, {
+    x: box.x, y: box.y + 0.4, w: box.w, h: box.h - 0.4, fontSize: 11, color: PPT.text, valign: 'top', paraSpaceAfter: 3,
+  });
+}
+
+function pptReportSlide(pptx, name, period, p) {
+  const slide = pptx.addSlide();
+  pptHeader(slide, pptx, `${name} · 주간 영업보고`, period);
+  const count = (key, value) => p.journals.filter((j) => j[key] === value).length;
+  const kpis = [
+    ['완료한 일', p.done.length, '할일 칸반 완료 기준'],
+    ['영업 방문', p.journals.length, `일반영업 ${count('visit_type', '일반영업')} · 관리방문 ${count('visit_type', '관리방문')}`],
+    ['감도 상', count('temperature', '상'), `감도 중 ${count('temperature', '중')} · 하 ${count('temperature', '하')}`],
+    ['협업', p.collabs.length, '협업일지 기준'],
+  ];
+  kpis.forEach(([label, value, sub], i) => {
+    const x = 0.5 + i * 3.12;
+    slide.addShape(pptx.ShapeType.rect, { x, y: 1.3, w: 2.97, h: 1.1, fill: { color: PPT.soft }, line: { color: PPT.soft } });
+    slide.addText(label, { x: x + 0.2, y: 1.34, w: 2.6, h: 0.3, fontSize: 11, color: PPT.muted });
+    slide.addText(`${value}건`, { x: x + 0.2, y: 1.6, w: 2.6, h: 0.52, fontSize: 24, bold: true, color: PPT.accent });
+    slide.addText(sub, { x: x + 0.2, y: 2.1, w: 2.6, h: 0.25, fontSize: 9, color: PPT.muted });
+  });
+
+  const done = p.done.sort((a, b) => a.done_at.localeCompare(b.done_at))
+    .map((t) => `${t.clinic ? `[${t.clinic}] ` : ''}${t.text}`);
+  const visits = p.journals.map((j) => [
+    md(parseYmd(j.visit_date)), j.clinic || '(치과명 없음)', j.visit_type, j.temperature && `감도 ${j.temperature}`,
+  ].filter(Boolean).join(' · '));
+  // 결과가 잘리지 않도록 협력 내용을 먼저 줄임
+  const collabLines = p.collabs.map((c) => `${c.partner || '(협력자 없음)'}: ${clip(c.how || '', 28)}`
+    + (c.result ? ` → ${c.result}` : ''));
+  pptSection(slide, '완료한 일', fitLines(done, 9), { x: 0.5, y: 2.6, w: 6.0, h: 3.0 }, '완료한 할일이 없어요.');
+  pptSection(slide, '영업 활동', fitLines(visits, 9), { x: 6.83, y: 2.6, w: 6.0, h: 3.0 }, '작성한 영업일지가 없어요.');
+  pptSection(slide, '협업 성과', fitLines(collabLines, 3), { x: 0.5, y: 5.75, w: 12.33, h: 1.45 }, '작성한 협업일지가 없어요.');
+}
+
+function pptPlanSlide(pptx, name, period, plan, nextMonStr) {
+  const slide = pptx.addSlide();
+  pptHeader(slide, pptx, `${name} · 다음주 계획`, period);
+  const MAX_ROWS = 14;
+  const cell = (text, options = {}) => ({ text, options });
+  const head = ['납기', '치과', '할 일', '상태']
+    .map((t) => cell(t, { bold: true, color: 'FFFFFF', fill: { color: PPT.accent } }));
+  const rows = plan.slice(0, MAX_ROWS).map((t) => {
+    const late = t.due && t.due < nextMonStr;
+    return [
+      cell(t.due ? `${md(parseYmd(t.due))}${late ? ' 지연' : ''}` : '-', late ? { color: PPT.danger, bold: true } : {}),
+      cell(clip(t.clinic || '', 14)),
+      cell(clip(t.text, 40)),
+      cell(COL_NAMES[t.col] || t.col),
+    ];
+  });
+  slide.addTable([head, ...rows], {
+    x: 0.5, y: 1.3, w: 12.33, colW: [1.7, 2.6, 6.83, 1.2], rowH: 0.36,
+    fontSize: 11, color: PPT.text, valign: 'middle', border: { type: 'solid', pt: 0.5, color: PPT.line },
+  });
+  if (plan.length > MAX_ROWS) {
+    slide.addText(`외 ${plan.length - MAX_ROWS}건`, { x: 0.5, y: 7.0, w: 12.33, h: 0.3, fontSize: 10, color: PPT.muted });
+  }
+}
+
+async function buildWeeklyPpt(mondayStr) {
+  const nextMon = parseYmd(mondayStr);
+  nextMon.setDate(nextMon.getDate() + 7);
+  const nextSun = new Date(nextMon);
+  nextSun.setDate(nextSun.getDate() + 6);
+  const [PptxGenJS, week, openTasks] = await Promise.all([
+    loadPptx(),
+    fetchWeek(mondayStr),
+    // 다음주 계획: 지금 남아 있는 할일 (아카이브 제외)
+    selectAll(() => sb.from('tasks').select('*').is('archived_at', null).in('col', ['todo', 'doing'])
+      .order('created_at').order('id')),
+  ]);
+  const { start, weekTasks, weekJournals, weekCollabs, who, inWeek } = week;
+
+  const people = new Map();
+  const of = (id) => {
+    if (!people.has(id)) people.set(id, { done: [], journals: [], collabs: [], plan: [] });
+    return people.get(id);
+  };
+  weekTasks.filter((t) => inWeek(t.done_at)).forEach((t) => of(t.user_id).done.push(t));
+  weekJournals.forEach((j) => of(j.user_id).journals.push(j));
+  weekCollabs.forEach((c) => of(c.user_id).collabs.push(c));
+  // 다음주 일요일까지 납기인 할일(지난 납기 포함) + 납기 없이 진행 중인 할일
+  openTasks.filter((t) => (t.due ? t.due <= ymd(nextSun) : t.col === 'doing'))
+    .forEach((t) => of(t.user_id).plan.push(t));
+  if (!people.size) throw new Error('이 주에는 보고할 내용이 없어요.');
+
+  const pptx = new PptxGenJS();
+  pptx.layout = 'LAYOUT_WIDE';
+  pptx.theme = { headFontFace: PPT.font, bodyFontFace: PPT.font };
+  const sun = new Date(start);
+  sun.setDate(sun.getDate() + 6);
+  const period = `${md(start)} ~ ${md(sun)}`;
+  const planPeriod = `${md(nextMon)} ~ ${md(nextSun)}`;
+  let slides = 0;
+  [...people].sort(([a], [b]) => who(a).localeCompare(who(b), 'ko')).forEach(([id, p]) => {
+    pptReportSlide(pptx, who(id), period, p);
+    slides++;
+    if (p.plan.length) {
+      p.plan.sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+      pptPlanSlide(pptx, who(id), planPeriod, p.plan, ymd(nextMon));
+      slides++;
+    }
+  });
+  const suffix = isMaster() ? '' : `_${profileName || '내보고'}`;
+  await pptx.writeFile({ fileName: `주간보고${suffix}_${mondayStr}.pptx` });
+  return { people: people.size, slides };
+}
+
 $('#reportForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.submitter;
   btn.disabled = true;
   btn.textContent = '만드는 중…';
+  const label = reportKind === 'ppt' ? 'PPT' : '엑셀';
   try {
-    const { tasks: nt, journals: nj, collabs: nc } = await buildWeeklyReport($('#reportWeek').value);
-    reportDialog.close();
-    showToast(`엑셀을 만들었어요. (영업일지 ${nj}건, 할일 ${nt}건, 협업일지 ${nc}건)`);
+    if (reportKind === 'ppt') {
+      const { people, slides } = await buildWeeklyPpt($('#reportWeek').value);
+      reportDialog.close();
+      showToast(isMaster() ? `PPT를 만들었어요. (영업사원 ${people}명, ${slides}장)` : `PPT를 만들었어요. (${slides}장)`);
+    } else {
+      const { tasks: nt, journals: nj, collabs: nc } = await buildWeeklyReport($('#reportWeek').value);
+      reportDialog.close();
+      showToast(`엑셀을 만들었어요. (영업일지 ${nj}건, 할일 ${nt}건, 협업일지 ${nc}건)`);
+    }
   } catch (err) {
     console.error('[report]', err);
-    showToast(`엑셀을 만들지 못했어요: ${err.message}`);
+    showToast(`${label}를 만들지 못했어요: ${err.message}`);
   } finally {
     btn.disabled = false;
     btn.textContent = '다운로드';

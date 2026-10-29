@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="stylesheet" href="style.css?v=21">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -250,10 +250,9 @@
       <button data-view="calc" data-sub="calc">🧮 계산기</button>
       <button data-view="calc" data-sub="date">📅 날짜계산기</button>
       <button data-view="calc" data-sub="ment">💬 자주쓰는멘트</button>
-      <div id="drawerMaster" hidden>
-        <p class="drawer-group">보고 (마스터)</p>
-        <button id="reportBtn">📑 주간 엑셀</button>
-      </div>
+      <p class="drawer-group">보고</p>
+      <button id="pptBtn">📊 주간보고 PPT</button>
+      <button id="reportBtn" hidden>📑 주간 엑셀 (마스터)</button>
     </div>
   </dialog>
 
@@ -393,14 +392,14 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 20</p>
+    <p class="sheet-desc">앱 버전 21</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
   <dialog id="reportDialog" class="sheet">
     <form id="reportForm" method="dialog" class="edit-form">
-      <p class="sheet-title">주간 엑셀 다운로드</p>
-      <p class="sheet-desc">선택한 주(월~일)의 전체 영업사원 할일과 영업일지를 엑셀로 받아요.</p>
+      <p id="reportTitle" class="sheet-title">주간 엑셀 다운로드</p>
+      <p id="reportDesc" class="sheet-desc"></p>
       <label>주 선택<select id="reportWeek"></select></label>
       <div class="edit-actions">
         <button type="button" data-action="close" class="muted">취소</button>
@@ -434,7 +433,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=20"></script>
-  <script src="app.js?v=20"></script>
+  <script src="calc.js?v=21"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>
