@@ -8,10 +8,11 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body data-view="todo">
   <header class="top">
+    <button id="menuBtn" class="icon-btn" aria-label="메뉴">☰</button>
     <h1 id="pageTitle">할일</h1>
     <span id="syncStatus" class="sync"></span>
     <button id="settingsBtn" class="icon-btn" aria-label="설정">⚙️</button>
@@ -192,12 +193,57 @@
     </main>
   </section>
 
-  <!-- 아래 메뉴 -->
-  <nav class="bottom-nav">
-    <button data-view="todo">✅<span>할일</span></button>
-    <button data-view="journal">📝<span>영업일지</span></button>
-    <button data-view="calc">🧭<span>세일즈가이드</span></button>
-  </nav>
+  <!-- ========== 치과 (개발 중) ========== -->
+  <section class="view" data-view="clinic" hidden>
+    <nav class="tabs guide-tabs" id="clinicTabs">
+      <button class="tab" data-clinic="board">🦷 현황판</button>
+      <button class="tab" data-clinic="invoice">🧾 거래명세서</button>
+      <button class="tab" data-clinic="alim">💬 알림톡</button>
+    </nav>
+    <main class="scroll" data-clinic-pane="board">
+      <div class="coming-soon">
+        <span class="cs-icon">🚧</span>
+        <p class="cs-title">공사 중이에요</p>
+        <p class="cs-desc">치과별 환자 진행 현황판은 개발 중이에요.</p>
+      </div>
+    </main>
+    <main class="scroll" data-clinic-pane="invoice" hidden>
+      <div class="coming-soon">
+        <span class="cs-icon">🚧</span>
+        <p class="cs-title">공사 중이에요</p>
+        <p class="cs-desc">치과별 거래명세서 조회는 개발 중이에요.</p>
+      </div>
+    </main>
+    <main class="scroll" data-clinic-pane="alim" hidden>
+      <div class="coming-soon">
+        <span class="cs-icon">🚧</span>
+        <p class="cs-title">공사 중이에요</p>
+        <p class="cs-desc">치과로 발송된 알림톡 내역은 개발 중이에요.</p>
+      </div>
+    </main>
+  </section>
+
+  <!-- 서랍 메뉴 -->
+  <dialog id="drawer" class="drawer" aria-label="메뉴">
+    <div class="drawer-inner">
+      <p class="drawer-head"><img src="icon-192.png" alt="" width="32" height="32">할일 보드</p>
+      <p class="drawer-group">업무</p>
+      <button data-view="todo">✅ 할일</button>
+      <button data-view="journal">📝 영업일지</button>
+      <p class="drawer-group">치과 <span class="drawer-soon">준비 중</span></p>
+      <button data-view="clinic" data-sub="board">🦷 치과 현황판</button>
+      <button data-view="clinic" data-sub="invoice">🧾 거래명세서</button>
+      <button data-view="clinic" data-sub="alim">💬 알림톡 내역</button>
+      <p class="drawer-group">세일즈가이드</p>
+      <button data-view="calc" data-sub="calc">🧮 계산기</button>
+      <button data-view="calc" data-sub="date">📅 날짜계산기</button>
+      <button data-view="calc" data-sub="ment">💬 자주쓰는멘트</button>
+      <div id="drawerMaster" hidden>
+        <p class="drawer-group">보고 (마스터)</p>
+        <button id="reportBtn">📑 주간 엑셀</button>
+      </div>
+    </div>
+  </dialog>
 
   <datalist id="clinicList"></datalist>
   <datalist id="regionList"></datalist>
@@ -307,7 +353,6 @@
       <button id="approvalBtn">👥 가입 승인 <span id="approvalCount" class="count-badge" hidden></span></button>
       <button id="noticeEditBtn">📢 공지 작성 (마스터)</button>
       <button id="promoEditBtn">🎁 프로모션 작성 (마스터)</button>
-      <button id="reportBtn">📊 주간 엑셀 다운로드 (마스터)</button>
       <button id="backupBtn">💾 전체 데이터 백업 <span id="backupLabel" class="muted"></span></button>
     </div>
     <button id="archiveBtn">🗄️ 아카이브 <span id="archiveCount" class="muted"></span></button>
@@ -316,7 +361,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 18</p>
+    <p class="sheet-desc">앱 버전 19</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -357,7 +402,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=18"></script>
-  <script src="app.js?v=18"></script>
+  <script src="calc.js?v=19"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>

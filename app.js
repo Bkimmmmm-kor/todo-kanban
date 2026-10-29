@@ -12,7 +12,7 @@ const ARCHIVE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COLS = ['todo', 'doing', 'done'];
 const COL_NAMES = { todo: '할 일', doing: '진행 중', done: '완료' };
-const VIEWS = { todo: '할일', journal: '영업일지', calc: '세일즈가이드' };
+const VIEWS = { todo: '할일', journal: '영업일지', clinic: '치과', calc: '세일즈가이드' };
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const LONG_PRESS_MS = 500;
 
@@ -318,21 +318,44 @@ function purgeArchive() {
 }
 
 // ---------- 메뉴 전환 ----------
-function setView(view) {
+// sub: 그 화면의 안쪽 탭 (세일즈가이드: calc/date/ment, 치과: board/invoice/alim)
+function setView(view, sub) {
   if (!VIEWS[view]) view = 'todo';
   document.body.dataset.view = view;
   $$('.view').forEach((v) => (v.hidden = v.dataset.view !== view));
-  $$('.bottom-nav button').forEach((b) => {
-    if (b.dataset.view === view) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
-  });
+  if (sub && view === 'calc') setGuideTab(sub);
+  if (sub && view === 'clinic') setClinicTab(sub);
   $('#pageTitle').textContent = VIEWS[view];
+  markDrawer();
   try {
     localStorage.setItem('last-view', view);
   } catch { /* 무시 */ }
 }
 
-$$('.bottom-nav button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+// ---------- 서랍 메뉴 ----------
+const drawer = $('#drawer');
+const currentSub = (view) => (view === 'calc' ? $('#guideTabs [aria-selected="true"]')?.dataset.guide
+  : view === 'clinic' ? $('#clinicTabs [aria-selected="true"]')?.dataset.clinic : undefined);
+
+function markDrawer() {
+  const view = document.body.dataset.view;
+  const sub = currentSub(view);
+  $$('#drawer [data-view]').forEach((b) => {
+    const on = b.dataset.view === view && (!b.dataset.sub || b.dataset.sub === sub);
+    if (on) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+}
+
+$('#menuBtn').addEventListener('click', () => {
+  $('#drawerMaster').hidden = !isMaster();
+  markDrawer();
+  drawer.showModal();
+});
+$$('#drawer [data-view]').forEach((b) => b.addEventListener('click', () => {
+  setView(b.dataset.view, b.dataset.sub);
+  drawer.close();
+}));
 
 function renderAll() {
   renderQuote();
@@ -965,6 +988,26 @@ $('#guideTabs').addEventListener('click', (e) => {
   if (tab) setGuideTab(tab);
 });
 
+// ================= 치과: 안쪽 탭 (개발 중 · 지금은 공사 중 화면) =================
+const CLINIC_KEY = 'clinic-tab';
+function setClinicTab(tab) {
+  if (!['board', 'invoice', 'alim'].includes(tab)) tab = 'board';
+  $$('#clinicTabs .tab').forEach((b) => b.setAttribute('aria-selected', b.dataset.clinic === tab));
+  $$('[data-clinic-pane]').forEach((p) => (p.hidden = p.dataset.clinicPane !== tab));
+  try {
+    localStorage.setItem(CLINIC_KEY, tab);
+  } catch { /* 무시 */ }
+}
+$('#clinicTabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-clinic]')?.dataset.clinic;
+  if (tab) setClinicTab(tab);
+});
+try {
+  setClinicTab(localStorage.getItem(CLINIC_KEY));
+} catch {
+  setClinicTab('board');
+}
+
 // ================= 날짜계산기 (영업일 기준) =================
 // 공휴일(대체공휴일 포함, 토요일과 겹친 공휴일도 적음 → 택배 도착일 계산용).
 // 해마다 다음 해 날짜를 추가해 주세요.
@@ -1058,7 +1101,7 @@ $('#dateCopyBtn').addEventListener('click', async () => {
   }
 });
 // 메뉴를 다시 열면 날짜를 오늘로
-$$('.bottom-nav button[data-view="calc"]').forEach((b) => b.addEventListener('click', () => {
+$$('#drawer [data-view="calc"]').forEach((b) => b.addEventListener('click', () => {
   $('#dateBase').value = '';
   dateCount = '';
   if (!$('[data-guide-pane="date"]').hidden) renderDateCalc();
@@ -1498,7 +1541,7 @@ $('#reportBtn').addEventListener('click', () => {
   $('#reportWeek').replaceChildren(...options);
   // 일요일·월요일에는 지난주를 기본으로
   if ([0, 1].includes(new Date().getDay())) $('#reportWeek').selectedIndex = 1;
-  settings.close();
+  drawer.close();
   reportDialog.showModal();
 });
 
