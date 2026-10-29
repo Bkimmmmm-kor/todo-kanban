@@ -12,7 +12,7 @@ const ARCHIVE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COLS = ['todo', 'doing', 'done'];
 const COL_NAMES = { todo: '할 일', doing: '진행 중', done: '완료' };
-const VIEWS = { todo: '할일', journal: '영업일지', clinic: '치과', calc: '세일즈가이드' };
+const VIEWS = { todo: '할일', journal: '영업일지', collab: '협업일지', clinic: '치과', calc: '세일즈가이드' };
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const LONG_PRESS_MS = 500;
 
@@ -33,6 +33,7 @@ let accessOk = false; // 승인된 사용자(또는 마스터)인지
 let tasks = [];
 let archive = [];
 let journals = [];
+let collabs = []; // 협업일지
 let notes = { notice: '', promo: '' }; // 공지 / 프로모션 문구
 let promo = { discounts: {}, until: '' }; // 프로모션 패키지별 할인액(원), 종료일
 let activeCol = 'todo';
@@ -119,6 +120,31 @@ function clinicType(r) {
   return '';
 }
 
+function collabToRow(c) {
+  return {
+    id: c.id,
+    collab_date: c.date,
+    partner: c.partner || null,
+    clinic: c.clinic || null,
+    how: c.how || null,
+    result: c.result || null,
+    created_at: toIso(c.createdAt),
+  };
+}
+
+function collabFromRow(r) {
+  return {
+    id: r.id,
+    date: r.collab_date,
+    partner: r.partner || '',
+    clinic: r.clinic || '',
+    how: r.how || '',
+    result: r.result || '',
+    createdAt: toMs(r.created_at),
+  };
+}
+
+// 영업일지·협업일지 공통: 최근 날짜가 위로
 const sortJournals = (list) => list.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
 
 // 서버와 동기화하는 표 목록
@@ -143,6 +169,15 @@ const stores = {
     fromRow: journalFromRow,
     synced: new Map(),
   },
+  collabs: {
+    items: () => collabs,
+    toRow: collabToRow,
+    apply(rows) {
+      collabs = sortJournals(rows.map(collabFromRow));
+    },
+    fromRow: collabFromRow,
+    synced: new Map(),
+  },
 };
 
 // ---------- 저장 / 동기화 ----------
@@ -158,7 +193,7 @@ function saveCache() {
   if (!user) return;
   try {
     localStorage.setItem(cacheKey(), JSON.stringify({
-      tasks, archive, journals, notes, promo, profileName, priceData: priceTable, approved: accessOk,
+      tasks, archive, journals, collabs, notes, promo, profileName, priceData: priceTable, approved: accessOk,
       synced: Object.fromEntries(Object.entries(stores).map(([k, s]) => [k, [...s.synced]])),
     }));
   } catch { /* 저장 공간 부족 등: 서버 저장은 계속됨 */ }
@@ -172,6 +207,7 @@ function loadCache() {
     archive = data.archive || [];
     // 예전 캐시의 교정과 O/X → 구분으로 변환
     journals = (data.journals || []).map((j) => ('type' in j ? j : { ...j, type: clinicType({ is_ortho: j.ortho }) }));
+    collabs = data.collabs || [];
     notes = data.notes || notes;
     promo = data.promo || promo;
     accessOk = !!data.approved;
@@ -257,17 +293,18 @@ async function pull() {
   try {
     if (!(await queuePush())) return;
     const uid = user.id;
-    const [taskData, journalData, boardRes, priceRes] = await Promise.all([
+    const [taskData, journalData, collabData, boardRes, priceRes] = await Promise.all([
       // 마스터는 모든 사람 것을 볼 수 있으므로 내 것만 받음
       selectAll(() => sb.from('tasks').select('*').eq('user_id', uid).order('id')),
       selectAll(() => sb.from('journals').select('*').eq('user_id', uid).order('id')),
+      selectAll(() => sb.from('collabs').select('*').eq('user_id', uid).order('id')),
       sb.from('board').select('kind, body, data'),
       sb.from('price_table').select('data').maybeSingle(),
     ]);
     if (boardRes.error) throw boardRes.error;
     if (user?.id !== uid) return; // 받는 사이 로그아웃
     if (hasPending()) return; // 받는 사이에 화면에서 바뀜 → 다음 동기화 때 반영
-    for (const [table, data] of [['tasks', taskData], ['journals', journalData]]) {
+    for (const [table, data] of [['tasks', taskData], ['journals', journalData], ['collabs', collabData]]) {
       const store = stores[table];
       store.apply(data);
       store.synced = new Map(data.map((r) => [r.id, JSON.stringify(store.toRow(store.fromRow(r)))]));
@@ -361,6 +398,7 @@ function renderAll() {
   renderQuote();
   renderTasks();
   renderJournals();
+  renderCollabs();
   renderNotes();
   renderAutocomplete();
 }
@@ -501,8 +539,9 @@ function renderAutocomplete() {
     opt.value = v;
     return opt;
   }));
-  fill('#clinicList', [...journals, ...tasks, ...archive].map((t) => t.clinic));
+  fill('#clinicList', [...journals, ...collabs, ...tasks, ...archive].map((t) => t.clinic));
   fill('#regionList', journals.map((j) => j.region));
+  fill('#partnerList', collabs.map((c) => c.partner));
 }
 
 // 납기일 표시: '10/8 (D-2)', 오늘이면 D-day
@@ -714,26 +753,40 @@ function dayLabel(dateStr) {
   return diff === 0 ? `오늘 · ${base}` : diff === 1 ? `어제 · ${base}` : base;
 }
 
-function renderJournals() {
+// 날짜별로 묶은 목록 (영업일지·협업일지). fill(li, item): 카드 내용 채우기
+function renderDayList(listSel, list, fill) {
   const items = [];
   let lastDate = null;
-  for (const j of journals) {
-    if (j.date !== lastDate) {
+  for (const x of list) {
+    if (x.date !== lastDate) {
       const h = document.createElement('li');
       h.className = 'journal-day';
-      h.textContent = dayLabel(j.date);
+      h.textContent = dayLabel(x.date);
       items.push(h);
-      lastDate = j.date;
+      lastDate = x.date;
     }
     const li = document.createElement('li');
     li.className = 'journal-item';
-    li.dataset.id = j.id;
-    const head = document.createElement('div');
-    head.className = 'j-head';
-    const clinic = document.createElement('span');
-    clinic.className = 'j-clinic';
-    clinic.textContent = j.clinic || '(치과명 없음)';
-    head.append(clinic);
+    li.dataset.id = x.id;
+    fill(li, x);
+    items.push(li);
+  }
+  $(listSel).replaceChildren(...items);
+}
+
+function journalHead(title) {
+  const head = document.createElement('div');
+  head.className = 'j-head';
+  const name = document.createElement('span');
+  name.className = 'j-clinic';
+  name.textContent = title;
+  head.append(name);
+  return head;
+}
+
+function renderJournals() {
+  renderDayList('#journalList', journals, (li, j) => {
+    const head = journalHead(j.clinic || '(치과명 없음)');
     if (j.region) head.append(tagEl(`📍 ${j.region}`));
     if (j.visit) head.append(tagEl(j.visit, j.visit === '관리방문' ? 'visit-care' : 'visit-sales'));
     if (j.type) head.append(tagEl(j.type));
@@ -745,9 +798,7 @@ function renderJournals() {
       p.textContent = j.content;
       li.append(p);
     }
-    items.push(li);
-  }
-  $('#journalList').replaceChildren(...items);
+  });
 }
 
 // 선택 버튼 묶음(교정과, 감도, 등급): 다시 누르면 선택 해제
@@ -840,6 +891,88 @@ $('#jDeleteBtn').addEventListener('click', () => {
     sortJournals(journals);
     save();
     renderJournals();
+  });
+});
+
+// ================= 협업일지 =================
+// 누가/어느 부서가 → 어떻게 협력 → 어떤 결과
+function collabLine(label, text) {
+  const p = document.createElement('p');
+  p.className = 'j-content c-line';
+  const b = document.createElement('b');
+  b.textContent = label;
+  p.append(b, text);
+  return p;
+}
+
+function renderCollabs() {
+  renderDayList('#collabList', collabs, (li, c) => {
+    const head = journalHead(`🤝 ${c.partner || '(협력자 없음)'}`);
+    if (c.clinic) head.append(tagEl(`🦷 ${c.clinic}`));
+    li.append(head);
+    if (c.how) li.append(collabLine('협력', c.how));
+    if (c.result) li.append(collabLine('결과', c.result));
+  });
+}
+
+const collabDialog = $('#collabDialog');
+let editCollabId = null;
+
+function openCollab(id = null) {
+  const c = collabs.find((x) => x.id === id);
+  editCollabId = c ? c.id : null;
+  $('#collabDialogTitle').textContent = c ? '협업일지 수정' : '협업일지 작성';
+  $('#cDate').value = c ? c.date : ymd(new Date());
+  $('#cPartner').value = c?.partner || '';
+  $('#cClinic').value = c?.clinic || '';
+  $('#cHow').value = c?.how || '';
+  $('#cResult').value = c?.result || '';
+  $('#cDeleteBtn').hidden = !c;
+  collabDialog.showModal();
+}
+
+$('#newCollabBtn').addEventListener('click', () => openCollab());
+$('#collabList').addEventListener('click', (e) => {
+  const item = e.target.closest('.journal-item');
+  if (item) openCollab(item.dataset.id);
+});
+
+$('#collabForm').addEventListener('submit', (e) => {
+  const data = {
+    date: $('#cDate').value || ymd(new Date()),
+    partner: $('#cPartner').value.trim(),
+    clinic: $('#cClinic').value.trim(),
+    how: $('#cHow').value.trim(),
+    result: $('#cResult').value.trim(),
+  };
+  if (!data.partner || !(data.how || data.result)) {
+    e.preventDefault();
+    showToast('협력자와, 협력 내용이나 결과 중 하나는 적어 주세요.');
+    return;
+  }
+  const existing = collabs.find((x) => x.id === editCollabId);
+  if (existing) Object.assign(existing, data);
+  else collabs.push({ id: newId(), createdAt: Date.now(), ...data });
+  sortJournals(collabs);
+  save();
+  renderCollabs();
+  renderAutocomplete();
+  vibrate(30);
+  showToast(existing ? '협업일지를 수정했어요.' : '협업일지를 저장했어요.');
+});
+
+$('#cDeleteBtn').addEventListener('click', () => {
+  const index = collabs.findIndex((x) => x.id === editCollabId);
+  if (index < 0) return;
+  const [removed] = collabs.splice(index, 1);
+  collabDialog.close();
+  save();
+  renderCollabs();
+  showToast('협업일지를 삭제했어요.', () => {
+    collabs.push(removed);
+    sortJournals(collabs);
+    save();
+    renderCollabs();
   });
 });
 
@@ -1274,6 +1407,7 @@ async function checkAccess() {
       tasks = [];
       archive = [];
       journals = [];
+      collabs = [];
       renderAll();
     }
     saveCache();
@@ -1575,7 +1709,7 @@ async function buildWeeklyReport(mondayStr) {
   const s = start.toISOString();
   const e = end.toISOString();
 
-  const [XLSX, profRows, weekTasks, weekJournals] = await Promise.all([
+  const [XLSX, profRows, weekTasks, weekJournals, weekCollabs] = await Promise.all([
     loadXlsx(),
     selectAll(() => sb.from('profiles').select('id, name, email').order('id')),
     selectAll(() => sb.from('tasks').select('*')
@@ -1583,6 +1717,8 @@ async function buildWeeklyReport(mondayStr) {
       .order('created_at').order('id')),
     selectAll(() => sb.from('journals').select('*').gte('visit_date', mondayStr).lt('visit_date', ymd(end))
       .order('visit_date').order('created_at').order('id')),
+    selectAll(() => sb.from('collabs').select('*').gte('collab_date', mondayStr).lt('collab_date', ymd(end))
+      .order('collab_date').order('created_at').order('id')),
   ]);
 
   const names = new Map(profRows.map((p) => [p.id, p.name || p.email || '']));
@@ -1592,7 +1728,7 @@ async function buildWeeklyReport(mondayStr) {
   // 영업사원별 요약
   const summary = new Map();
   const sum = (id) => {
-    if (!summary.has(id)) summary.set(id, { 등록: 0, 완료: 0, 일지: 0, 일반영업: 0, 관리방문: 0, 상: 0, 중: 0, 하: 0 });
+    if (!summary.has(id)) summary.set(id, { 등록: 0, 완료: 0, 일지: 0, 일반영업: 0, 관리방문: 0, 상: 0, 중: 0, 하: 0, 협업: 0 });
     return summary.get(id);
   };
   weekTasks.forEach((t) => {
@@ -1605,11 +1741,12 @@ async function buildWeeklyReport(mondayStr) {
     if (VISIT_TYPES.includes(j.visit_type)) row[j.visit_type]++;
     if (j.temperature) row[j.temperature]++;
   });
+  weekCollabs.forEach((c) => sum(c.user_id).협업++);
 
   const summaryRows = [...summary].map(([id, v]) => ({
     영업사원: who(id), '할일 등록': v.등록, '할일 완료': v.완료, 영업일지: v.일지,
     일반영업: v.일반영업, 관리방문: v.관리방문,
-    '감도 상': v.상, '감도 중': v.중, '감도 하': v.하,
+    '감도 상': v.상, '감도 중': v.중, '감도 하': v.하, 협업일지: v.협업,
   })).sort((a, b) => a.영업사원.localeCompare(b.영업사원, 'ko'));
 
   const taskRows = weekTasks.map((t) => ({
@@ -1634,6 +1771,16 @@ async function buildWeeklyReport(mondayStr) {
     내용: j.content || '',
   })).sort((a, b) => a.영업사원.localeCompare(b.영업사원, 'ko') || a.방문일.localeCompare(b.방문일));
 
+  const collabRows = weekCollabs.map((c) => ({
+    영업사원: who(c.user_id),
+    날짜: c.collab_date,
+    요일: WEEKDAYS[parseYmd(c.collab_date).getDay()],
+    협력자: c.partner || '',
+    치과명: c.clinic || '',
+    협력내용: c.how || '',
+    결과: c.result || '',
+  })).sort((a, b) => a.영업사원.localeCompare(b.영업사원, 'ko') || a.날짜.localeCompare(b.날짜));
+
   const sheet = (rows, headers, widths) => {
     const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
     ws['!cols'] = widths.map((wch) => ({ wch }));
@@ -1641,19 +1788,22 @@ async function buildWeeklyReport(mondayStr) {
   };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, sheet(summaryRows,
-    ['영업사원', '할일 등록', '할일 완료', '영업일지', '일반영업', '관리방문', '감도 상', '감도 중', '감도 하'],
-    [14, 10, 10, 10, 10, 10, 8, 8, 8]), '요약');
+    ['영업사원', '할일 등록', '할일 완료', '영업일지', '일반영업', '관리방문', '감도 상', '감도 중', '감도 하', '협업일지'],
+    [14, 10, 10, 10, 10, 10, 8, 8, 8, 10]), '요약');
   XLSX.utils.book_append_sheet(wb, sheet(journalRows,
     ['영업사원', '방문일', '요일', '방문유형', '지역', '치과명', '구분', '감도', '내용'],
     [12, 12, 6, 10, 12, 20, 8, 6, 60]), '영업일지');
   XLSX.utils.book_append_sheet(wb, sheet(taskRows,
     ['영업사원', '치과명', '내용', '상태', '납기일', '등록일시', '완료일시'],
     [12, 20, 50, 8, 12, 17, 17]), '할일');
+  XLSX.utils.book_append_sheet(wb, sheet(collabRows,
+    ['영업사원', '날짜', '요일', '협력자', '치과명', '협력내용', '결과'],
+    [12, 12, 6, 16, 20, 45, 45]), '협업일지');
 
   const sat = new Date(start);
   sat.setDate(sat.getDate() + 5);
   XLSX.writeFile(wb, `주간보고_${mondayStr}_${ymd(sat)}.xlsx`);
-  return { tasks: taskRows.length, journals: journalRows.length };
+  return { tasks: taskRows.length, journals: journalRows.length, collabs: collabRows.length };
 }
 
 $('#reportForm').addEventListener('submit', async (e) => {
@@ -1662,9 +1812,9 @@ $('#reportForm').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.textContent = '만드는 중…';
   try {
-    const { tasks: nt, journals: nj } = await buildWeeklyReport($('#reportWeek').value);
+    const { tasks: nt, journals: nj, collabs: nc } = await buildWeeklyReport($('#reportWeek').value);
     reportDialog.close();
-    showToast(`엑셀을 만들었어요. (영업일지 ${nj}건, 할일 ${nt}건)`);
+    showToast(`엑셀을 만들었어요. (영업일지 ${nj}건, 할일 ${nt}건, 협업일지 ${nc}건)`);
   } catch (err) {
     console.error('[report]', err);
     showToast(`엑셀을 만들지 못했어요: ${err.message}`);
@@ -1681,11 +1831,12 @@ const fetchAll = (table, columns = '*', orderBy = 'created_at', key = 'id') =>
   selectAll(() => sb.from(table).select(columns).order(orderBy).order(key));
 
 async function buildFullBackup() {
-  const [XLSX, profiles, taskRows, journalRows, boardRows] = await Promise.all([
+  const [XLSX, profiles, taskRows, journalRows, collabRows, boardRows] = await Promise.all([
     loadXlsx(),
     fetchAll('profiles', 'id, name, email, status, created_at'),
     fetchAll('tasks'),
     fetchAll('journals'),
+    fetchAll('collabs'),
     fetchAll('board', 'kind, body, data, updated_at', 'kind', 'kind'),
   ]);
   const names = new Map(profiles.map((p) => [p.id, p.name || p.email || '']));
@@ -1727,6 +1878,19 @@ async function buildFullBackup() {
     사용자ID: j.user_id,
   })).sort((a, b) => byName(a, b) || a.방문일.localeCompare(b.방문일));
 
+  const collabSheet = collabRows.map((c) => ({
+    영업사원: who(c.user_id),
+    날짜: c.collab_date,
+    요일: WEEKDAYS[parseYmd(c.collab_date).getDay()],
+    협력자: c.partner || '',
+    치과명: c.clinic || '',
+    협력내용: c.how || '',
+    결과: c.result || '',
+    작성일시: fmtDateTime(c.created_at),
+    ID: c.id,
+    사용자ID: c.user_id,
+  })).sort((a, b) => byName(a, b) || a.날짜.localeCompare(b.날짜));
+
   const boardSheet = boardRows.map((r) => {
     const d = r.data || {};
     const discounts = PROMO_PKGS.filter(([k]) => d.discounts?.[k] > 0)
@@ -1747,6 +1911,7 @@ async function buildFullBackup() {
     { 항목: '영업사원(계정)', 값: `${profileSheet.length}명` },
     { 항목: '할일', 값: `${taskSheet.length}건 (아카이브 포함)` },
     { 항목: '영업일지', 값: `${journalSheet.length}건` },
+    { 항목: '협업일지', 값: `${collabSheet.length}건` },
     { 항목: '공지·프로모션', 값: `${boardSheet.length}건` },
     { 항목: '참고', 값: 'ID·사용자ID 열은 복원할 때 쓰이니 지우지 마세요.' },
   ];
@@ -1765,13 +1930,16 @@ async function buildFullBackup() {
   XLSX.utils.book_append_sheet(wb, sheet(taskSheet,
     ['영업사원', '치과명', '내용', '상태', '납기일', '등록일시', '완료일시', '아카이브일시', 'ID', '사용자ID'],
     [12, 20, 50, 9, 12, 17, 17, 17, 16, 38]), '할일');
+  XLSX.utils.book_append_sheet(wb, sheet(collabSheet,
+    ['영업사원', '날짜', '요일', '협력자', '치과명', '협력내용', '결과', '작성일시', 'ID', '사용자ID'],
+    [12, 12, 6, 16, 20, 45, 45, 17, 16, 38]), '협업일지');
   XLSX.utils.book_append_sheet(wb, sheet(boardSheet, ['종류', '내용', '할인', '종료일', '수정일시'], [10, 60, 40, 12, 17]), '공지·프로모션');
 
   XLSX.writeFile(wb, `할일보드_전체백업_${ymd(now)}.xlsx`);
   try {
     localStorage.setItem(BACKUP_KEY, String(Date.now()));
   } catch { /* 무시 */ }
-  return { profiles: profileSheet.length, tasks: taskSheet.length, journals: journalSheet.length };
+  return { profiles: profileSheet.length, tasks: taskSheet.length, journals: journalSheet.length, collabs: collabSheet.length };
 }
 
 function backupOverdue() {
@@ -1811,7 +1979,7 @@ $('#backupBtn').addEventListener('click', async () => {
   try {
     const r = await buildFullBackup();
     settings.close();
-    showToast(`백업 완료: 영업사원 ${r.profiles}명 · 영업일지 ${r.journals}건 · 할일 ${r.tasks}건`);
+    showToast(`백업 완료: 영업사원 ${r.profiles}명 · 영업일지 ${r.journals}건 · 협업일지 ${r.collabs}건 · 할일 ${r.tasks}건`);
   } catch (err) {
     console.error('[backup]', err);
     showToast(`백업하지 못했어요: ${err.message}`);
@@ -1896,6 +2064,7 @@ function setUser(u) {
   tasks = [];
   archive = [];
   journals = [];
+  collabs = [];
   notes = { notice: '', promo: '' };
   promo = { discounts: {}, until: '' };
   profileName = '';
@@ -1920,6 +2089,8 @@ function setUser(u) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'journals', filter: mine }, () => schedulePull())
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tasks' }, () => schedulePull())
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'journals' }, () => schedulePull())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'collabs', filter: mine }, () => schedulePull())
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'collabs' }, () => schedulePull())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'board' }, () => schedulePull())
     // 승인 상태가 바뀌면 바로 반영 (마스터는 새 가입 요청 알림)
     .on('postgres_changes', isMaster()

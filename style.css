@@ -328,6 +328,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tag.temp-중 { background: var(--todo); color: #fff; }
 .tag.temp-하 { background: var(--border); color: var(--muted); }
 .journal-list:not(:empty) + .journal-empty { display: none; }
+/* 협업일지: '협력' / '결과' 줄 */
+.journal-item .c-line { -webkit-line-clamp: 2; }
+.journal-item .c-line + .c-line { margin-top: 4px; }
+.journal-item .c-line b { margin-right: 6px; color: var(--muted); font-size: .85rem; }
 
 /* 계산기 */
 .calc-field { display: block; margin-top: 14px; font-size: .85rem; color: var(--muted); }

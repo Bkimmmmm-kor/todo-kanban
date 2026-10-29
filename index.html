@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -107,6 +107,17 @@
     </main>
     <div class="action-bar">
       <button id="newJournalBtn" class="primary-btn">＋ 영업일지 작성</button>
+    </div>
+  </section>
+
+  <!-- ========== 협업일지 ========== -->
+  <section class="view" data-view="collab" hidden>
+    <main class="scroll">
+      <ul id="collabList" class="journal-list"></ul>
+      <p class="empty journal-empty">작성한 협업일지가 없어요.<br>다른 부서·동료와 협력해서 얻은 결과를 기록해 보세요.</p>
+    </main>
+    <div class="action-bar">
+      <button id="newCollabBtn" class="primary-btn">＋ 협업일지 작성</button>
     </div>
   </section>
 
@@ -230,6 +241,7 @@
       <p class="drawer-group">업무</p>
       <button data-view="todo">✅ 할일</button>
       <button data-view="journal">📝 영업일지</button>
+      <button data-view="collab">🤝 협업일지</button>
       <p class="drawer-group">치과 <span class="drawer-soon">준비 중</span></p>
       <button data-view="clinic" data-sub="board">🦷 치과 현황판</button>
       <button data-view="clinic" data-sub="invoice">🧾 거래명세서</button>
@@ -247,6 +259,7 @@
 
   <datalist id="clinicList"></datalist>
   <datalist id="regionList"></datalist>
+  <datalist id="partnerList"></datalist>
 
   <!-- 카드 메뉴 -->
   <dialog id="cardMenu" class="sheet">
@@ -321,6 +334,25 @@
     </form>
   </dialog>
 
+  <!-- 협업일지 작성/수정 -->
+  <dialog id="collabDialog" class="sheet tall">
+    <form id="collabForm" method="dialog" class="edit-form" autocomplete="off">
+      <p id="collabDialogTitle" class="sheet-title" tabindex="-1" autofocus>협업일지 작성</p>
+      <label>날짜<input id="cDate" type="date" required></label>
+      <div class="two-col">
+        <label>협력자 (부서/이름)<input id="cPartner" type="text" list="partnerList" placeholder="예: 생산팀 김OO"></label>
+        <label>치과명 (선택)<input id="cClinic" type="text" list="clinicList" placeholder="치과명"></label>
+      </div>
+      <label>어떻게 협력했나요<textarea id="cHow" rows="3" placeholder="예: 긴급 출고 일정을 조정해 줌"></textarea></label>
+      <label>어떤 결과가 있었나요<textarea id="cResult" rows="3" placeholder="예: 납기 2일 단축, 신규 계약 성사"></textarea></label>
+      <div class="edit-actions">
+        <button type="button" id="cDeleteBtn" class="danger" hidden>삭제</button>
+        <button type="button" data-action="close" class="muted">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- 공지/프로모션 작성 (마스터) -->
   <dialog id="noteDialog" class="sheet">
     <form id="noteForm" method="dialog" class="edit-form">
@@ -361,7 +393,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 19</p>
+    <p class="sheet-desc">앱 버전 20</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -402,7 +434,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=19"></script>
-  <script src="app.js?v=19"></script>
+  <script src="calc.js?v=20"></script>
+  <script src="app.js?v=20"></script>
 </body>
 </html>
