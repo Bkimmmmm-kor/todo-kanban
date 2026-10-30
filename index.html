@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=22">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -204,32 +204,53 @@
     </main>
   </section>
 
-  <!-- ========== 치과 (개발 중) ========== -->
+  <!-- ========== 치과 (영업채널: 담당 치과만) ========== -->
   <section class="view" data-view="clinic" hidden>
     <nav class="tabs guide-tabs" id="clinicTabs">
       <button class="tab" data-clinic="board">🦷 현황판</button>
-      <button class="tab" data-clinic="invoice">🧾 거래명세서</button>
+      <button class="tab" data-clinic="ar">💰 미납</button>
       <button class="tab" data-clinic="alim">💬 알림톡</button>
+      <button class="tab" data-clinic="invoice">🧾 명세서</button>
     </nav>
+    <!-- 현황판·미납은 회사 DB를 보는 사내 서버에서만 열림 (새 탭) -->
     <main class="scroll" data-clinic-pane="board">
       <div class="coming-soon">
-        <span class="cs-icon">🚧</span>
-        <p class="cs-title">공사 중이에요</p>
-        <p class="cs-desc">치과별 환자 진행 현황판은 개발 중이에요.</p>
+        <span class="cs-icon">🦷</span>
+        <p class="cs-title">치과 환자 현황판</p>
+        <p class="cs-desc">담당 치과 환자의 진단·제작 진행 상황과 납기를 봐요.<br>환자 정보라 <b>사내 와이파이에서만</b> 열려요.</p>
+        <button class="primary-btn office-btn" data-office="board" type="button">사내 와이파이에서 열기</button>
+        <p class="office-note"></p>
       </div>
+    </main>
+    <main class="scroll" data-clinic-pane="ar" hidden>
+      <div class="coming-soon">
+        <span class="cs-icon">💰</span>
+        <p class="cs-title">미납·미수</p>
+        <p class="cs-desc">담당 치과의 당월 사용액, 미납·이월미납액, 납입 이력을 봐요.<br>금액 정보라 <b>사내 와이파이에서만</b> 열려요.</p>
+        <button class="primary-btn office-btn" data-office="ar" type="button">사내 와이파이에서 열기</button>
+        <p class="office-note"></p>
+      </div>
+    </main>
+    <!-- 알림톡: 사내 미니PC가 30분마다 올린 최근 7일 기록 (어디서나) -->
+    <main class="scroll" data-clinic-pane="alim" hidden>
+      <div class="segmented alim-days" id="alimDays">
+        <button type="button" data-value="0">오늘</button>
+        <button type="button" data-value="2">3일</button>
+        <button type="button" data-value="6" class="on">7일</button>
+      </div>
+      <div class="alim-filters">
+        <select id="alimClinic" aria-label="치과"><option value="">전체 치과</option></select>
+        <label class="alim-fail"><input type="checkbox" id="alimFailOnly"> 실패만</label>
+      </div>
+      <p class="alim-summary" id="alimSummary"></p>
+      <ul class="journal-list" id="alimList"></ul>
+      <p class="empty alim-empty" id="alimEmpty">알림톡 발송 내역이 없어요.</p>
     </main>
     <main class="scroll" data-clinic-pane="invoice" hidden>
       <div class="coming-soon">
         <span class="cs-icon">🚧</span>
         <p class="cs-title">공사 중이에요</p>
         <p class="cs-desc">치과별 거래명세서 조회는 개발 중이에요.</p>
-      </div>
-    </main>
-    <main class="scroll" data-clinic-pane="alim" hidden>
-      <div class="coming-soon">
-        <span class="cs-icon">🚧</span>
-        <p class="cs-title">공사 중이에요</p>
-        <p class="cs-desc">치과로 발송된 알림톡 내역은 개발 중이에요.</p>
       </div>
     </main>
   </section>
@@ -242,10 +263,11 @@
       <button data-view="todo">✅ 할일</button>
       <button data-view="journal">📝 영업일지</button>
       <button data-view="collab">🤝 협업일지</button>
-      <p class="drawer-group">치과 <span class="drawer-soon">준비 중</span></p>
+      <p class="drawer-group">치과 <span class="drawer-soon">영업채널</span></p>
       <button data-view="clinic" data-sub="board">🦷 치과 현황판</button>
-      <button data-view="clinic" data-sub="invoice">🧾 거래명세서</button>
+      <button data-view="clinic" data-sub="ar">💰 미납·미수</button>
       <button data-view="clinic" data-sub="alim">💬 알림톡 내역</button>
+      <button data-view="clinic" data-sub="invoice">🧾 거래명세서</button>
       <p class="drawer-group">세일즈가이드</p>
       <button data-view="calc" data-sub="calc">🧮 계산기</button>
       <button data-view="calc" data-sub="date">📅 날짜계산기</button>
@@ -392,7 +414,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 21</p>
+    <p class="sheet-desc">앱 버전 22</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -433,7 +455,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=21"></script>
-  <script src="app.js?v=21"></script>
+  <script src="calc.js?v=22"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>

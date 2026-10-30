@@ -6,6 +6,8 @@ const SUPABASE_KEY = 'sb_publishable_j_wtAX2FkiL4CkoB78jA3Q_otkyQPzG';
 const APP_URL = location.origin + location.pathname;
 // 화면 표시용. 실제 권한은 서버의 is_master() 규칙이 판단
 const MASTER_EMAILS = ['jungbae900@realigner.co.kr', 'jungbae900@naver.com'];
+// 사내 서버(회사 미니PC). 회사 DB를 보는 현황판·미납은 사내 와이파이에서만 열림
+const OFFICE_URL = 'http://192.168.0.55:8501';
 const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 const PPTX_URL = 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';
 
@@ -31,6 +33,8 @@ const sb = window.supabase
 let user = null;
 let profileName = '';
 let accessOk = false; // 승인된 사용자(또는 마스터)인지
+let salesAccess = false; // 영업채널 권한 (치과 메뉴, 마스터가 켬)
+let authToken = null; // 사내 서버에 넘길 로그인 토큰
 let tasks = [];
 let archive = [];
 let journals = [];
@@ -1122,16 +1126,94 @@ $('#guideTabs').addEventListener('click', (e) => {
   if (tab) setGuideTab(tab);
 });
 
-// ================= 치과: 안쪽 탭 (개발 중 · 지금은 공사 중 화면) =================
+// ================= 치과 (영업채널: 마스터가 권한을 켠 사람, 담당 치과만) =================
 const CLINIC_KEY = 'clinic-tab';
+const canSales = () => isMaster() || salesAccess;
 function setClinicTab(tab) {
-  if (!['board', 'invoice', 'alim'].includes(tab)) tab = 'board';
+  if (!['board', 'ar', 'alim', 'invoice'].includes(tab)) tab = 'board';
   $$('#clinicTabs .tab').forEach((b) => b.setAttribute('aria-selected', b.dataset.clinic === tab));
   $$('[data-clinic-pane]').forEach((p) => (p.hidden = p.dataset.clinicPane !== tab));
+  if (tab === 'alim') loadAlim();
   try {
     localStorage.setItem(CLINIC_KEY, tab);
   } catch { /* 무시 */ }
 }
+
+// 현황판·미납: 사내 서버를 새 탭으로 (로그인 토큰을 넘겨 바로 열림). 회사 밖에서는 주소가 열리지 않음
+function renderOffice() {
+  $$('.office-note').forEach((p) => (p.textContent = canSales()
+    ? '회사 밖(LTE·외부 와이파이)에서는 열리지 않아요.'
+    : '영업채널 권한이 필요해요. 마스터에게 요청하세요.'));
+  $$('.office-btn').forEach((b) => (b.disabled = !canSales()));
+}
+$$('.office-btn').forEach((b) => b.addEventListener('click', () => {
+  if (!canSales()) return;
+  const t = authToken ? `?t=${encodeURIComponent(authToken)}` : '';
+  window.open(`${OFFICE_URL}/${b.dataset.office}${t}`, '_blank', 'noopener');
+}));
+
+// 알림톡: 사내 미니PC가 30분마다 올린 최근 7일 발송 기록. 서버 규칙(RLS)이 내 담당 치과 것만 내려줌
+let alimRows = [];
+let alimLoading = false;
+async function loadAlim() {
+  renderAlim();
+  if (!sb || !user || !canSales() || alimLoading) return;
+  alimLoading = true;
+  const since = new Date(Date.now() - 7 * DAY_MS).toISOString();
+  const { data, error } = await sb.from('alim_log')
+    .select('seq, send_dt, clinic_id, clinic_name, patient, kind, success, fail_msg, synced_at')
+    .gte('send_dt', since).order('send_dt', { ascending: false }).limit(2000);
+  alimLoading = false;
+  if (error) {
+    console.error('[alim]', error);
+    $('#alimSummary').textContent = '알림톡 내역을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.';
+    return;
+  }
+  alimRows = data.map((r) => ({ ...r, id: String(r.seq), date: ymd(new Date(r.send_dt)) }));
+  const clinics = [...new Map(alimRows.map((r) => [r.clinic_id, r.clinic_name || r.clinic_id])).entries()]
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'ko'));
+  const sel = $('#alimClinic');
+  const keep = sel.value;
+  sel.replaceChildren(new Option('전체 치과', ''), ...clinics.map(([id, name]) => new Option(name, id)));
+  sel.value = clinics.some(([id]) => id === keep) ? keep : '';
+  renderAlim();
+}
+
+function renderAlim() {
+  if (!canSales()) {
+    $('#alimSummary').textContent = '영업채널 권한이 필요해요. 마스터에게 요청하세요.';
+    $('#alimList').replaceChildren();
+    return;
+  }
+  const days = Number(segValue($('#alimDays')) || 6);
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  from.setDate(from.getDate() - days);
+  const clinic = $('#alimClinic').value;
+  const failOnly = $('#alimFailOnly').checked;
+  const inRange = alimRows.filter((r) => new Date(r.send_dt) >= from && (!clinic || r.clinic_id === clinic));
+  const shown = failOnly ? inRange.filter((r) => !r.success) : inRange;
+  const fails = inRange.filter((r) => !r.success).length;
+  const synced = alimRows.reduce((m, r) => (r.synced_at > m ? r.synced_at : m), '');
+  const ago = synced ? Math.round((Date.now() - new Date(synced)) / 60000) : null;
+  $('#alimSummary').textContent = `발송 ${inRange.length}건 · 성공 ${inRange.length - fails} · 실패 ${fails}`
+    + (ago === null ? '' : ` · ${ago < 60 ? `${ago}분` : `${Math.floor(ago / 60)}시간`} 전 갱신`);
+  renderDayList('#alimList', shown, (li, r) => {
+    const head = journalHead(r.clinic_name || '(치과 없음)');
+    head.append(tagEl(r.success ? '✅ 성공' : '❌ 실패', r.success ? 'alim-ok' : 'alim-fail'));
+    li.append(head);
+    const p = document.createElement('p');
+    p.className = 'j-content';
+    const d = new Date(r.send_dt);
+    p.textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      + ` · ${r.patient || '-'} · ${r.kind || '알림톡'}${r.success ? '' : `\n사유: ${r.fail_msg || '알 수 없음'}`}`;
+    li.append(p);
+  });
+}
+bindSeg($('#alimDays'), renderAlim, false);
+$('#alimClinic').addEventListener('change', renderAlim);
+$('#alimFailOnly').addEventListener('change', renderAlim);
+renderOffice();
 $('#clinicTabs').addEventListener('click', (e) => {
   const tab = e.target.closest('[data-clinic]')?.dataset.clinic;
   if (tab) setClinicTab(tab);
@@ -1382,16 +1464,19 @@ async function checkAccess() {
   checkingAccess = true;
   const uid = user.id;
   try {
-    let { data, error } = await sb.from('profiles').select('name, status').eq('id', uid).maybeSingle();
+    let { data, error } = await sb.from('profiles').select('name, status, sales_access').eq('id', uid).maybeSingle();
     if (error) throw error;
     if (user?.id !== uid) return;
     if (!data) {
       // 처음 로그인: 승인 요청용 프로필 만들기 (status 는 서버가 pending 으로 정함)
-      const res = await sb.from('profiles').upsert({ id: uid, email: user.email }).select('name, status').single();
+      const res = await sb.from('profiles').upsert({ id: uid, email: user.email })
+        .select('name, status, sales_access').single();
       if (res.error) throw res.error;
       data = res.data;
     }
     profileName = data.name || '';
+    salesAccess = !!data.sales_access;
+    renderOffice();
     const ok = isMaster() || data.status === 'approved';
     showPending(ok ? null : data.status);
     if (!data.name) {
@@ -1467,8 +1552,8 @@ let approvals = [];
 
 async function refreshApprovals() {
   if (!isMaster()) return;
-  const { data, error } = await sb.from('profiles').select('id, name, email, status, created_at')
-    .in('status', ['pending', 'rejected']).order('created_at');
+  const { data, error } = await sb.from('profiles').select('id, name, email, status, created_at, sales_access, emp_ids')
+    .in('status', ['pending', 'rejected', 'approved']).order('created_at');
   if (error) {
     console.error('[approval]', error);
     return;
@@ -1483,7 +1568,7 @@ async function refreshApprovals() {
 
 function renderApprovals() {
   const items = [];
-  for (const [status, label] of [['pending', '승인 대기'], ['rejected', '거절됨']]) {
+  for (const [status, label] of [['pending', '승인 대기'], ['rejected', '거절됨'], ['approved', '승인됨 · 영업채널']]) {
     const list = approvals.filter((p) => p.status === status);
     if (!list.length) continue;
     const h = document.createElement('li');
@@ -1500,7 +1585,9 @@ function renderApprovals() {
       const meta = document.createElement('span');
       meta.className = 'ap-meta';
       const d = new Date(p.created_at);
-      meta.textContent = `${p.email || ''} · ${d.getMonth() + 1}/${d.getDate()} 가입`;
+      meta.textContent = status === 'approved'
+        ? `${p.email || ''} · ${p.sales_access ? `담당자 코드 ${(p.emp_ids || []).length}개` : '영업채널 꺼짐'}`
+        : `${p.email || ''} · ${d.getMonth() + 1}/${d.getDate()} 가입`;
       who.append(name, meta);
       li.append(who);
       const btn = (text, cls, next) => {
@@ -1511,8 +1598,15 @@ function renderApprovals() {
         b.dataset.status = next;
         return b;
       };
-      if (status === 'pending') li.append(btn('거절', 'ap-reject', 'rejected'));
-      li.append(btn('승인', 'ap-approve', 'approved'));
+      if (status === 'approved') {
+        // 영업채널 켜기/끄기. 담당자 코드 연결은 사내 현황판의 '담당자 연결' 화면에서
+        const b = btn(p.sales_access ? '영업채널 끄기' : '영업채널 켜기', p.sales_access ? 'ap-reject' : 'ap-approve', '');
+        b.dataset.sales = p.sales_access ? '0' : '1';
+        li.append(b);
+      } else {
+        if (status === 'pending') li.append(btn('거절', 'ap-reject', 'rejected'));
+        li.append(btn('승인', 'ap-approve', 'approved'));
+      }
       items.push(li);
     }
   }
@@ -1532,6 +1626,21 @@ approvalDialog.addEventListener('click', async (e) => {
   if (!b) return;
   const p = approvals.find((x) => x.id === b.dataset.id);
   const who = p?.name || p?.email || '';
+  if (b.dataset.sales) {
+    const on = b.dataset.sales === '1';
+    b.disabled = true;
+    const { error } = await sb.from('profiles').update({ sales_access: on }).eq('id', b.dataset.id);
+    if (error) {
+      b.disabled = false;
+      showToast(`처리하지 못했어요: ${error.message}`);
+      return;
+    }
+    showToast(on ? `${who} 님 영업채널을 켰어요. 사내 현황판 '담당자 연결'에서 담당자 코드를 연결해 주세요.`
+      : `${who} 님 영업채널을 껐어요.`);
+    await refreshApprovals();
+    renderApprovals();
+    return;
+  }
   if (b.dataset.status === 'rejected' && !confirm(`${who} 님의 가입을 거절할까요?`)) return;
   b.disabled = true;
   const { error } = await sb.from('profiles').update({ status: b.dataset.status }).eq('id', b.dataset.id);
@@ -2236,6 +2345,9 @@ function setUser(u) {
   profileName = '';
   setPriceTable(null);
   accessOk = false;
+  salesAccess = false;
+  alimRows = [];
+  renderOffice();
   approvals = [];
   $('#settingsBtn').classList.remove('has-badge');
   Object.values(stores).forEach((s) => (s.synced = new Map()));
@@ -2280,6 +2392,7 @@ renderAll();
 
 if (sb) {
   sb.auth.onAuthStateChange((event, session) => {
+    authToken = session?.access_token ?? null; // 토큰 갱신 때도 최신으로
     // 이 콜백 안에서 바로 서버를 호출하면 멈출 수 있어 다음 차례로 미룸
     setTimeout(async () => {
       if (event === 'PASSWORD_RECOVERY') {

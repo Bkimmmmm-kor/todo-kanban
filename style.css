@@ -453,3 +453,23 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (min-width: 760px) { .tabs.guide-tabs { display: flex; } }
 .segmented.date-count { margin-top: 12px; }
 .segmented.date-count button { height: 42px; font-size: .95rem; }
+
+/* 치과: 사내 서버 열기 */
+.coming-soon .cs-desc { line-height: 1.6; word-break: keep-all; }
+.office-btn { max-width: 320px; margin-top: 20px; }
+.office-btn:disabled { opacity: .45; }
+.office-note { margin: 10px 0 0; font-size: .85rem; color: var(--muted); }
+
+/* 치과: 알림톡 내역 */
+.alim-days button { height: 40px; }
+.alim-filters { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; }
+.alim-filters select {
+  flex: 1; min-width: 0; padding: 10px; font: inherit; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.alim-fail { display: flex; gap: 6px; align-items: center; white-space: nowrap; font-size: .95rem; }
+.alim-summary { margin: 6px 0 0; font-size: .85rem; color: var(--muted); }
+#alimList .journal-item { cursor: default; }
+.tag.alim-ok { background: #d1fae5; color: #065f46; }
+.tag.alim-fail { background: var(--danger); color: #fff; }
+.journal-list:not(:empty) + .alim-empty { display: none; }
