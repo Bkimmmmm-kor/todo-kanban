@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -54,9 +54,12 @@
 
   <!-- ========== 할일 ========== -->
   <section class="view" data-view="todo">
+    <div class="segmented todo-mode" id="todoMode">
+      <button type="button" data-mode="kanban">▦ 칸반</button>
+      <button type="button" data-mode="cal">📅 달력</button>
+    </div>
     <nav class="tabs" role="tablist">
       <button class="tab" data-col="todo" role="tab">할 일 <span class="count" data-count="todo">0</span></button>
-      <button class="tab" data-col="doing" role="tab">진행 중 <span class="count" data-count="doing">0</span></button>
       <button class="tab" data-col="done" role="tab">완료 <span class="count" data-count="done">0</span></button>
     </nav>
 
@@ -66,11 +69,6 @@
         <ul class="cards" data-list="todo"></ul>
         <p class="empty">할 일이 없어요. 아래 입력창에 적어보세요.</p>
       </section>
-      <section class="column" data-col="doing">
-        <h2>진행 중</h2>
-        <ul class="cards" data-list="doing"></ul>
-        <p class="empty">진행 중인 일이 없어요.</p>
-      </section>
       <section class="column" data-col="done">
         <h2>완료</h2>
         <ul class="cards" data-list="done"></ul>
@@ -79,14 +77,28 @@
       </section>
     </main>
 
-    <p class="hint">탭: 다음 단계로 · 길게 누르기: 수정/삭제</p>
+    <!-- 달력: 날짜 칸 아래에 그날 할 일을 이어서 적음. 완료는 가로줄 -->
+    <main class="calendar" id="calendar" hidden>
+      <div class="cal-head">
+        <button type="button" id="calPrev" class="icon-btn" aria-label="이전 달">‹</button>
+        <p id="calTitle" class="cal-title"></p>
+        <button type="button" id="calNext" class="icon-btn" aria-label="다음 달">›</button>
+        <button type="button" id="calToday" class="cal-today">오늘</button>
+      </div>
+      <div class="cal-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+      <div class="cal-grid" id="calGrid"></div>
+      <p class="cal-day-title" id="calDayTitle"></p>
+      <ul class="cards" id="calList"></ul>
+      <p class="empty">이 날 할 일이 없어요. 아래에 적어 보세요.</p>
+    </main>
+
+    <p class="hint" id="todoHint"></p>
 
     <form id="addForm" class="composer" autocomplete="off">
       <div class="composer-extra">
         <input id="clinicInput" type="text" placeholder="치과명 (선택)" list="clinicList" enterkeyhint="next">
         <div class="due-wrap">
-          <button type="button" id="dueBtn" class="due-btn">📅 납기일</button>
-          <button type="button" id="dueClear" class="due-clear" aria-label="납기일 지우기" hidden>✕</button>
+          <button type="button" id="dueBtn" class="due-btn">📅 날짜</button>
           <!-- 달력은 이 칸이 띄움 (화면에는 안 보임) -->
           <input id="dueInput" type="date" tabindex="-1" aria-hidden="true">
         </div>
@@ -287,7 +299,6 @@
     <p id="menuTitle" class="sheet-title"></p>
     <button data-action="edit">✏️ 수정</button>
     <button data-action="todo">↩️ 할 일로</button>
-    <button data-action="doing">▶️ 진행 중으로</button>
     <button data-action="done">✅ 완료로</button>
     <button data-action="delete" class="danger">🗑️ 삭제</button>
     <button data-action="close" class="muted">닫기</button>
@@ -298,7 +309,7 @@
     <form id="editForm" method="dialog" class="edit-form" autocomplete="off">
       <p class="sheet-title">할 일 수정</p>
       <label>치과명<input id="editClinic" type="text" list="clinicList" placeholder="선택"></label>
-      <label>납기일<input id="editDue" type="date"></label>
+      <label>날짜<input id="editDue" type="date" required></label>
       <label>내용<textarea id="editText" rows="3" required></textarea></label>
       <div class="edit-actions">
         <button type="button" data-action="close" class="muted">취소</button>
@@ -414,7 +425,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 22</p>
+    <p class="sheet-desc">앱 버전 23</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -455,7 +466,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=22"></script>
-  <script src="app.js?v=22"></script>
+  <script src="calc.js?v=23"></script>
+  <script src="app.js?v=23"></script>
 </body>
 </html>

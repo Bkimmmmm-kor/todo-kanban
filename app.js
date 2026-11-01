@@ -13,8 +13,8 @@ const PPTX_URL = 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bun
 
 const ARCHIVE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const COLS = ['todo', 'doing', 'done'];
-const COL_NAMES = { todo: '할 일', doing: '진행 중', done: '완료' };
+const COLS = ['todo', 'done']; // v23: '진행 중' 칸 없앰 (예전 카드는 dropDoing 이 할 일로 옮김)
+const COL_NAMES = { todo: '할 일', done: '완료' };
 const VIEWS = { todo: '할일', journal: '영업일지', collab: '협업일지', clinic: '치과', calc: '세일즈가이드' };
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const LONG_PRESS_MS = 500;
@@ -42,6 +42,9 @@ let collabs = []; // 협업일지
 let notes = { notice: '', promo: '' }; // 공지 / 프로모션 문구
 let promo = { discounts: {}, until: '' }; // 프로모션 패키지별 할인액(원), 종료일
 let activeCol = 'todo';
+let todoMode = 'kanban'; // 할일 보기: kanban / cal(달력)
+let calMonth = null; // 달력에 보이는 달 (1일)
+let calSel = null; // 달력에서 고른 날 'YYYY-MM-DD'
 
 const isMaster = () => MASTER_EMAILS.includes(user?.email?.toLowerCase());
 
@@ -215,6 +218,7 @@ function loadCache() {
     collabs = data.collabs || [];
     notes = data.notes || notes;
     promo = data.promo || promo;
+    dropDoing();
     accessOk = !!data.approved;
     profileName = data.profileName || '';
     setPriceTable(data.priceData);
@@ -323,6 +327,7 @@ async function pull() {
     // 수가표는 없어도 나머지 동기화는 계속
     if (priceRes.error) console.error('[sync] price', priceRes.error);
     else setPriceTable(priceRes.data?.data);
+    if (dropDoing()) queuePush();
     saveCache();
     renderAll();
     setSync('ok');
@@ -409,13 +414,25 @@ function renderAll() {
 }
 
 // ================= 할일 =================
+// 예전 '진행 중' 카드 → 할 일. 바뀐 게 있으면 true
+function dropDoing() {
+  const doing = tasks.filter((t) => t.col === 'doing');
+  doing.forEach((t) => (t.col = 'todo'));
+  return doing.length > 0;
+}
+
+// 할 일은 날짜가 꼭 있어야 함 (달력에 표시)
 function addTask(text, clinic = '', due = '') {
   text = text.trim();
   if (!text) return false;
+  if (!due) {
+    showToast('날짜를 골라 주세요.');
+    openPicker(dueInput);
+    return false;
+  }
   const now = Date.now();
-  const task = { id: newId(), text, col: 'todo', createdAt: now, movedAt: now, doneAt: null };
+  const task = { id: newId(), text, col: 'todo', due, createdAt: now, movedAt: now, doneAt: null }; // due: 'YYYY-MM-DD'
   if (clinic.trim()) task.clinic = clinic.trim();
-  if (due) task.due = due; // 'YYYY-MM-DD'
   tasks.unshift(task);
   save();
   setActiveCol('todo');
@@ -480,12 +497,12 @@ function editTask(id) {
 $('#editForm').addEventListener('submit', () => {
   const task = tasks.find((t) => t.id === editTaskId);
   const text = $('#editText').value.trim();
-  if (!task || !text) return;
-  task.text = text;
-  const clinic = $('#editClinic').value.trim();
   const due = $('#editDue').value;
+  if (!task || !text || !due) return;
+  task.text = text;
+  task.due = due;
+  const clinic = $('#editClinic').value.trim();
   if (clinic) task.clinic = clinic; else delete task.clinic;
-  if (due) task.due = due; else delete task.due;
   save();
   renderTasks();
   renderAutocomplete();
@@ -535,7 +552,94 @@ function renderTasks() {
     $(`.tab[data-col="${col}"]`).classList.toggle('has-new', items.some((t) => t.isNew));
   }
   $('#archiveCount').textContent = archive.length ? `(${archive.length})` : '';
+  renderCalendar();
 }
+
+// ---------- 달력 보기 ----------
+// 날짜가 없는 예전 할 일은 등록한 날에 표시
+const taskDay = (t) => t.due || ymd(new Date(t.createdAt));
+
+function setTodoMode(mode) {
+  todoMode = mode === 'cal' ? 'cal' : 'kanban';
+  const cal = todoMode === 'cal';
+  $$('#todoMode button').forEach((b) => b.classList.toggle('on', b.dataset.mode === todoMode));
+  $('.view[data-view="todo"]').classList.toggle('cal-mode', cal);
+  $('#calendar').hidden = !cal;
+  $('#todoHint').textContent = cal
+    ? '날짜를 고르고 아래에 적기 · 할 일 탭: 완료/되돌리기 · 길게 누르기: 수정/삭제'
+    : '탭: 완료로 · 길게 누르기: 수정/삭제';
+  setDue(cal ? calSel : ymd(new Date()));
+  renderCalendar();
+  try {
+    localStorage.setItem('todo-mode', todoMode);
+  } catch { /* 무시 */ }
+}
+
+function selectDay(day) {
+  calSel = day;
+  const d = parseYmd(day);
+  calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  setDue(day);
+  renderCalendar();
+}
+
+function renderCalendar() {
+  if (todoMode !== 'cal') return;
+  const byDay = new Map();
+  // 적은 순서대로 아래로 이어짐. 완료(아카이브 포함)는 가로줄
+  for (const t of [...tasks, ...archive].sort((a, b) => a.createdAt - b.createdAt)) {
+    const day = taskDay(t);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(t);
+  }
+  const y = calMonth.getFullYear();
+  const m = calMonth.getMonth();
+  $('#calTitle').textContent = `${y}년 ${m + 1}월`;
+  const today = ymd(new Date());
+  const weeks = Math.ceil((calMonth.getDay() + new Date(y, m + 1, 0).getDate()) / 7);
+  const cells = [];
+  for (let i = 0; i < weeks * 7; i++) {
+    const d = new Date(y, m, 1 - calMonth.getDay() + i);
+    const day = ymd(d);
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'cal-day';
+    cell.dataset.day = day;
+    cell.classList.toggle('out', d.getMonth() !== m);
+    cell.classList.toggle('today', day === today);
+    cell.classList.toggle('sel', day === calSel);
+    cell.classList.toggle('red', d.getDay() === 0 || HOLIDAYS.has(day));
+    cell.classList.toggle('blue', d.getDay() === 6 && !HOLIDAYS.has(day));
+    const num = document.createElement('span');
+    num.className = 'cal-num';
+    num.textContent = d.getDate();
+    cell.append(num);
+    for (const t of byDay.get(day) || []) {
+      const item = document.createElement('span');
+      item.className = `cal-item${t.col === 'done' ? ' done' : ''}`;
+      item.textContent = t.text;
+      cell.append(item);
+    }
+    cells.push(cell);
+  }
+  $('#calGrid').replaceChildren(...cells);
+  const list = byDay.get(calSel) || [];
+  $('#calDayTitle').textContent = `${dayLabel(calSel)} · ${list.length}개`;
+  $('#calList').replaceChildren(...list.map(cardEl));
+}
+
+$$('#todoMode button').forEach((b) => b.addEventListener('click', () => setTodoMode(b.dataset.mode)));
+$('#calGrid').addEventListener('click', (e) => {
+  const cell = e.target.closest('.cal-day');
+  if (cell) selectDay(cell.dataset.day);
+});
+function shiftMonth(n) {
+  calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + n, 1);
+  renderCalendar();
+}
+$('#calPrev').addEventListener('click', () => shiftMonth(-1));
+$('#calNext').addEventListener('click', () => shiftMonth(1));
+$('#calToday').addEventListener('click', () => selectDay(ymd(new Date())));
 
 // 예전에 입력한 치과명·지역을 자동완성 목록으로
 function renderAutocomplete() {
@@ -556,7 +660,7 @@ function dueLabel(due) {
   today.setHours(0, 0, 0, 0);
   const diff = Math.round((date - today) / DAY_MS);
   const dday = diff === 0 ? 'D-day' : diff > 0 ? `D-${diff}` : `D+${-diff}`;
-  return { text: `납기 ${date.getMonth() + 1}/${date.getDate()} (${dday})`, diff };
+  return { text: `${date.getMonth() + 1}/${date.getDate()} (${dday})`, diff };
 }
 
 function tagEl(text, cls = '') {
@@ -638,12 +742,12 @@ function vibrate(ms) {
   if (navigator.vibrate) navigator.vibrate(ms);
 }
 
-// ---------- 카드: 탭 = 다음 단계, 길게 누르기 = 메뉴 ----------
+// ---------- 카드: 탭 = 완료(달력에서는 완료/되돌리기), 길게 누르기 = 메뉴 ----------
 let pressTimer = null;
 let pressStart = null;
 let longPressed = false;
 
-const board = $('.board');
+const board = $('.view[data-view="todo"]'); // 칸반 + 달력의 그날 목록
 
 board.addEventListener('pointerdown', (e) => {
   const card = e.target.closest('.card');
@@ -673,12 +777,10 @@ board.addEventListener('click', (e) => {
   const card = e.target.closest('.card');
   if (!card || longPressed) return;
   const task = tasks.find((t) => t.id === card.dataset.id);
-  if (!task) return;
-  if (task.col === 'done') {
-    openCardMenu(task.id);
-  } else {
-    moveTask(task.id, task.col === 'todo' ? 'doing' : 'done');
-  }
+  if (!task) return; // 아카이브된 카드(달력)는 그대로
+  if (card.closest('#calList')) moveTask(task.id, task.col === 'done' ? 'todo' : 'done');
+  else if (task.col === 'done') openCardMenu(task.id);
+  else moveTask(task.id, 'done');
 });
 
 board.addEventListener('contextmenu', (e) => {
@@ -719,18 +821,18 @@ $('#addForm').addEventListener('submit', (e) => {
   }
   input.value = '';
   $('#clinicInput').value = '';
-  setDue('');
+  // 달력에서는 같은 날에 이어서 적음, 칸반은 오늘로 돌아감
+  setDue(todoMode === 'cal' ? calSel : ymd(new Date()));
 });
 
-// 납기일 버튼: 누르면 달력, 고르면 버튼에 날짜 표시
+// 날짜 버튼: 누르면 달력, 고르면 버튼에 날짜 표시 (기본 오늘, 꼭 있어야 함)
 const dueInput = $('#dueInput');
 const dueBtn = $('#dueBtn');
 
 function setDue(value) {
   dueInput.value = value;
-  dueBtn.textContent = value ? `📅 ${dueLabel(value).text.replace('납기 ', '')}` : '📅 납기일';
+  dueBtn.textContent = value ? `📅 ${dueLabel(value).text}` : '📅 날짜';
   dueBtn.classList.toggle('set', !!value);
-  $('#dueClear').hidden = !value;
 }
 
 function openPicker(input) {
@@ -743,8 +845,11 @@ function openPicker(input) {
 }
 
 dueBtn.addEventListener('click', () => openPicker(dueInput));
-dueInput.addEventListener('change', () => setDue(dueInput.value));
-$('#dueClear').addEventListener('click', () => setDue(''));
+dueInput.addEventListener('change', () => {
+  if (!dueInput.value) return setDue(todoMode === 'cal' ? calSel : ymd(new Date())); // 지우기 누름
+  if (todoMode === 'cal') selectDay(dueInput.value);
+  else setDue(dueInput.value);
+});
 
 $('#clearDoneBtn').addEventListener('click', clearDone);
 
@@ -2385,7 +2490,11 @@ setActiveCol(activeCol);
 let lastView = 'todo';
 try {
   lastView = localStorage.getItem('last-view') || 'todo';
+  todoMode = localStorage.getItem('todo-mode') || 'kanban';
 } catch { /* 무시 */ }
+calSel = ymd(new Date());
+calMonth = parseYmd(calSel.slice(0, 8) + '01');
+setTodoMode(todoMode);
 setView(lastView);
 syncCalcInputs();
 renderAll();

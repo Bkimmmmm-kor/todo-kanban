@@ -7,7 +7,6 @@
   --accent: #2563eb;
   --danger: #dc2626;
   --todo: #f59e0b;
-  --doing: #3b82f6;
   --done: #10b981;
   --shadow: 0 1px 3px rgba(0, 0, 0, .12);
 }
@@ -83,7 +82,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 999px; background: var(--border); font-size: .85rem;
 }
 .tab[aria-selected="true"][data-col="todo"]  { border-color: var(--todo);  box-shadow: inset 0 -3px 0 var(--todo); }
-.tab[aria-selected="true"][data-col="doing"] { border-color: var(--doing); box-shadow: inset 0 -3px 0 var(--doing); }
 .tab[aria-selected="true"][data-col="done"]  { border-color: var(--done);  box-shadow: inset 0 -3px 0 var(--done); }
 
 .board { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
@@ -102,7 +100,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .card:active { transform: scale(.98); }
 .card[data-col="todo"]  { border-left-color: var(--todo); }
-.card[data-col="doing"] { border-left-color: var(--doing); }
 .card[data-col="done"]  { border-left-color: var(--done); color: var(--muted); text-decoration: line-through; }
 .card .meta { display: block; margin-top: 6px; font-size: .8rem; color: var(--muted); text-decoration: none; }
 
@@ -129,11 +126,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-size: .95rem;
 }
 .due-btn.set { border-color: var(--accent); color: var(--accent); font-weight: 700; }
-.due-clear {
-  height: 42px; width: 36px; margin-left: -4px; border: 0; background: none;
-  color: var(--muted); font-size: 1rem;
-}
-.due-clear[hidden] { display: none; }
 /* 달력을 띄우는 실제 날짜 칸: 버튼 아래에 투명하게 겹쳐 둠 */
 .due-wrap input[type="date"] {
   position: absolute; left: 0; bottom: 0; width: 100%; height: 100%;
@@ -222,10 +214,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .toast[hidden] { display: none; }
 .toast .text-btn { color: #93c5fd; }
 
-/* 넓은 화면(가로 모드, 폴드, PC)에서는 3열 모두 표시 */
+/* 넓은 화면(가로 모드, 폴드, PC)에서는 두 칸 모두 표시 */
 @media (min-width: 760px) {
   .tabs { display: none; }
-  .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
+  .board { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: start; }
   .column { display: block; background: rgba(127, 127, 127, .08); border-radius: 16px; padding: 12px; }
   .column h2 { display: block; font-size: 1rem; margin: 4px 4px 12px; }
 }
@@ -473,3 +465,48 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tag.alim-ok { background: #d1fae5; color: #065f46; }
 .tag.alim-fail { background: var(--danger); color: #fff; }
 .journal-list:not(:empty) + .alim-empty { display: none; }
+
+/* ================= v23: 할일 칸반 / 달력 ================= */
+.todo-mode { padding: 8px 16px 0; }
+.todo-mode button { height: 36px; font-size: .9rem; }
+.cal-mode .tabs, .cal-mode .board { display: none; }
+.calendar { flex: 1; overflow-y: auto; padding: 8px 12px 16px; }
+.calendar[hidden] { display: none; }
+.cal-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.cal-title { flex: 1; margin: 0; text-align: center; font-weight: 700; font-size: 1.1rem; }
+.cal-today {
+  height: 32px; padding: 0 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: .85rem;
+}
+.cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-week span { text-align: center; font-size: .75rem; color: var(--muted); padding: 2px 0; }
+.cal-week span:first-child { color: var(--danger); }
+.cal-week span:last-child { color: var(--accent); }
+.cal-grid { border-top: 1px solid var(--border); border-left: 1px solid var(--border); background: var(--surface); }
+/* 칸은 그날 할 일 수만큼 아래로 늘어남 */
+.cal-day {
+  min-height: 64px; min-width: 0; padding: 2px 2px 4px; margin: 0;
+  display: flex; flex-direction: column; align-items: stretch; gap: 1px; text-align: left;
+  border: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  background: none; color: var(--text); font: inherit; cursor: pointer;
+}
+.cal-day.out { background: rgba(127, 127, 127, .07); }
+.cal-day.out > * { opacity: .45; }
+.cal-day.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+.cal-num { align-self: flex-start; min-width: 20px; height: 20px; padding: 0 3px; border-radius: 10px;
+  font-size: .75rem; font-weight: 700; line-height: 20px; text-align: center; }
+.cal-day.red .cal-num { color: var(--danger); }
+.cal-day.blue .cal-num { color: var(--accent); }
+.cal-day.today .cal-num { background: var(--accent); color: #fff; }
+.cal-item {
+  display: block; font-size: .68rem; line-height: 1.3; padding: 0 2px; border-radius: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: rgba(245, 158, 11, .16);
+}
+.cal-item.done { background: none; color: var(--muted); text-decoration: line-through; }
+.cal-day-title { margin: 14px 4px 8px; font-weight: 700; }
+#calList .card { padding: 12px 14px; font-size: 1rem; }
+@media (min-width: 760px) {
+  .cal-day { min-height: 90px; padding: 4px; }
+  .cal-item { font-size: .8rem; }
+}
