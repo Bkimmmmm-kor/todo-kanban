@@ -2141,8 +2141,10 @@ function pptReport(pptx, name, period, p, today) {
   page.heading('4. 추후 업무 계획');
   if (!p.plan.length) none();
   p.plan.forEach((t) => {
-    const late = t.due < today;
-    page.item(`${mdShort(parseYmd(t.due))}${late ? ' (지연)' : ''}  ${t.text}`, late ? PPT.danger : PPT.text);
+    const late = t.due && t.due < today;
+    const date = t.due ? mdShort(parseYmd(t.due)) : '날짜 없음';
+    page.item(`${date}${late ? ' (지연)' : ''}  ${t.clinic?.trim() ? `[${t.clinic.trim()}] ` : ''}${t.text}`,
+      late ? PPT.danger : PPT.text);
   });
 }
 
@@ -2157,7 +2159,6 @@ async function buildWeeklyPpt(mondayStr) {
   const { start, weekTasks, weekJournals, who, inWeek } = week;
   const sun = new Date(start);
   sun.setDate(sun.getDate() + 6);
-  const sunStr = ymd(sun);
 
   const people = new Map();
   const of = (id) => {
@@ -2166,9 +2167,8 @@ async function buildWeeklyPpt(mondayStr) {
   };
   weekTasks.filter((t) => inWeek(t.done_at)).forEach((t) => of(t.user_id).done.push(t));
   weekJournals.forEach((j) => of(j.user_id).journals.push(j));
-  // 치과명 없는 남은 할일 중 보고 주 이후 날짜 + 보고 주까지였는데 못 끝낸 일
-  openTasks.filter((t) => t.due && !t.clinic?.trim() && (t.due > sunStr || t.due < ymd(new Date())))
-    .forEach((t) => of(t.user_id).plan.push(t));
+  // 아직 안 끝낸 할일 전부 (치과명 있는 일 포함, 지난 날짜는 '지연')
+  openTasks.forEach((t) => of(t.user_id).plan.push(t));
   if (!people.size) throw new Error('이 주에는 보고할 내용이 없어요.');
 
   const pptx = new PptxGenJS();
@@ -2178,7 +2178,7 @@ async function buildWeeklyPpt(mondayStr) {
   const period = `${mdShort(start)}~${mdShort(sun)}`;
   const today = ymd(new Date());
   [...people].sort(([a], [b]) => who(a).localeCompare(who(b), 'ko')).forEach(([id, p]) => {
-    p.plan.sort((a, b) => a.due.localeCompare(b.due));
+    p.plan.sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
     pptReport(pptx, who(id), period, p, today);
   });
   const suffix = isMaster() ? '' : `_${profileName || '내보고'}`;
