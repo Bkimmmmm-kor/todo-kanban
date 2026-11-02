@@ -1879,7 +1879,7 @@ function openReport(kind) {
   reportKind = kind;
   $('#reportTitle').textContent = kind === 'ppt' ? '주간보고 PPT' : '주간 엑셀 다운로드';
   $('#reportDesc').textContent = kind === 'ppt'
-    ? `선택한 주(월~일)의 보고와 그다음 주 계획을 ${isMaster() ? '영업사원별로 ' : ''}PPT로 받아요.`
+    ? `선택한 주(월~일)의 업무 보고(활동 요약 · 거래처 이슈 · 업무 처리 · 추후 계획)를 ${isMaster() ? '영업사원별로 ' : ''}세로 A4 PPT로 받아요.`
     : '선택한 주(월~일)의 전체 영업사원 할일·영업일지·협업일지를 엑셀로 받아요.';
   const thisMonday = mondayOf(new Date());
   const options = [];
@@ -2044,139 +2044,146 @@ async function buildWeeklyReport(mondayStr) {
   return { tasks: taskRows.length, journals: journalRows.length, collabs: collabRows.length };
 }
 
-// ---------- 주간보고 PPT: 영업사원별 1장(지난주 보고) + 1장(다음주 계획, 있을 때만) ----------
-const PPT = {
-  font: 'Malgun Gothic', accent: '2563EB', text: '111827', muted: '6B7280',
-  soft: 'F3F4F6', line: 'E5E7EB', danger: 'DC2626',
-};
+// ---------- 주간보고 PPT: 영업사원별 세로 A4 보고서 (내용이 길면 다음 장으로 이어짐) ----------
+const PPT = { font: 'Malgun Gothic', accent: '2563EB', text: '111827', muted: '6B7280', danger: 'DC2626' };
 const md = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS[d.getDay()]})`;
+const mdShort = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
 const clip = (text, n) => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
-// 목록이 길면 앞부분만 싣고 나머지는 '외 N건'
-const fitLines = (lines, max) => (lines.length > max
-  ? [...lines.slice(0, max - 1), `외 ${lines.length - max + 1}건 (자세한 내용은 주간 엑셀)`]
-  : lines);
 
-function pptHeader(slide, pptx, title, period) {
-  slide.addText(title, { x: 0.5, y: 0.35, w: 8.5, h: 0.6, fontSize: 24, bold: true, color: PPT.text });
-  slide.addText(period, { x: 8.8, y: 0.4, w: 4.03, h: 0.5, fontSize: 14, color: PPT.muted, align: 'right' });
-  slide.addShape(pptx.ShapeType.line, { x: 0.5, y: 1.05, w: 12.33, h: 0, line: { color: PPT.accent, width: 2 } });
+// 세로 A4(8.27×11.69인치)에 위에서부터 차례로 쌓고, 자리가 모자라면 '(계속)' 장을 새로 만듦
+function pptPage(pptx, title) {
+  const X = 0.6, W = 7.07, BOTTOM = 11.1;
+  let slide, y;
+  const newSlide = (cont) => {
+    slide = pptx.addSlide();
+    slide.addText(cont ? `${title} (계속)` : title, {
+      x: X, y: 0.45, w: W, h: 0.5, fontSize: 16, bold: true, color: PPT.text, margin: 0,
+    });
+    slide.addShape(pptx.ShapeType.line, { x: X, y: 1.0, w: W, h: 0, line: { color: PPT.text, width: 1.5 } });
+    y = 1.15;
+  };
+  // 10.5pt 한글은 1인치에 약 6.6자 (영문·숫자·공백은 반 칸)로 어림해 줄 수를 셈
+  const lineCount = (text, w) => {
+    const units = [...text].reduce((n, ch) => n + (ch.charCodeAt(0) < 0x1100 ? 0.55 : 1), 0);
+    return Math.max(1, Math.ceil(units / (w * 6.6)));
+  };
+  newSlide(false);
+  return {
+    heading(text) {
+      if (y + 0.9 > BOTTOM) newSlide(true);
+      y += 0.15;
+      slide.addText(text, { x: X, y, w: W, h: 0.34, fontSize: 13, bold: true, color: PPT.accent, margin: 0 });
+      y += 0.42;
+    },
+    sub(text) {
+      if (y + 0.6 > BOTTOM) newSlide(true);
+      slide.addText(text, { x: X + 0.1, y, w: W - 0.1, h: 0.28, fontSize: 11, bold: true, color: PPT.text, margin: 0 });
+      y += 0.32;
+    },
+    // 글머리표 한 개 (한 줄 안에서 굵기·색을 섞으면 pptxgenjs가 PowerPoint 복구 오류가 나는 XML을 만들어 한 모양으로만)
+    item(text, color = PPT.text) {
+      const x = X + 0.15;
+      const h = lineCount(text, W - 0.15 - 0.3) * 0.21 + 0.06;
+      if (y + h > BOTTOM) newSlide(true);
+      slide.addText(text, {
+        x, y, w: X + W - x, h, fontSize: 10.5, color, valign: 'top', margin: 0, bullet: { indent: 12 },
+      });
+      y += h + 0.05;
+    },
+  };
 }
 
-// 한 항목이 한 줄에 들어가도록 자름 (11pt 한글 기준 1인치에 약 6자)
-function pptSection(slide, title, lines, box, empty) {
-  slide.addText(title, { x: box.x, y: box.y, w: box.w, h: 0.35, fontSize: 14, bold: true, color: PPT.text });
-  const maxChars = Math.floor(box.w * 6.2) - 3;
-  const body = lines.length
-    ? lines.map((text) => ({ text: clip(text, maxChars), options: { bullet: true, breakLine: true } }))
-    : [{ text: empty, options: { color: PPT.muted } }];
-  slide.addText(body, {
-    x: box.x, y: box.y + 0.4, w: box.w, h: box.h - 0.4, fontSize: 11, color: PPT.text, valign: 'top', paraSpaceAfter: 3,
-  });
-}
+function pptReport(pptx, name, period, p, today) {
+  const page = pptPage(pptx, `■ 주간업무 보고 (${period}) – ${name}`);
+  const none = () => page.item('없음', PPT.muted);
+  const visits = p.journals;
+  const care = (j) => j.visit_type === '관리방문';
+  const regions = [...new Set(visits.map((j) => (j.region || '').trim()).filter(Boolean))];
 
-function pptReportSlide(pptx, name, period, p) {
-  const slide = pptx.addSlide();
-  pptHeader(slide, pptx, `${name} · 주간 영업보고`, period);
-  const count = (key, value) => p.journals.filter((j) => j[key] === value).length;
-  const kpis = [
-    ['완료한 일', p.done.length, '할일 칸반 완료 기준'],
-    ['영업 방문', p.journals.length, `일반영업 ${count('visit_type', '일반영업')} · 관리방문 ${count('visit_type', '관리방문')}`],
-    ['감도 상', count('temperature', '상'), `감도 중 ${count('temperature', '중')} · 하 ${count('temperature', '하')}`],
-    ['협업', p.collabs.length, '협업일지 기준'],
-  ];
-  kpis.forEach(([label, value, sub], i) => {
-    const x = 0.5 + i * 3.12;
-    slide.addShape(pptx.ShapeType.rect, { x, y: 1.3, w: 2.97, h: 1.1, fill: { color: PPT.soft }, line: { color: PPT.soft } });
-    slide.addText(label, { x: x + 0.2, y: 1.34, w: 2.6, h: 0.3, fontSize: 11, color: PPT.muted });
-    slide.addText(`${value}건`, { x: x + 0.2, y: 1.6, w: 2.6, h: 0.52, fontSize: 24, bold: true, color: PPT.accent });
-    slide.addText(sub, { x: x + 0.2, y: 2.1, w: 2.6, h: 0.25, fontSize: 9, color: PPT.muted });
-  });
+  page.heading('1. 지난주 영업 활동 요약');
+  page.item(`총 ${visits.length}곳 방문 (일반영업 ${visits.filter((j) => !care(j)).length}, 관리방문 ${visits.filter(care).length})`);
+  page.item(`지역: ${regions.join(', ') || '-'}`);
 
-  const done = p.done.sort((a, b) => a.done_at.localeCompare(b.done_at))
-    .map((t) => `${t.clinic ? `[${t.clinic}] ` : ''}${t.text}`);
-  const visits = p.journals.map((j) => [
-    md(parseYmd(j.visit_date)), j.clinic || '(치과명 없음)', j.visit_type, j.temperature && `감도 ${j.temperature}`,
-  ].filter(Boolean).join(' · '));
-  // 결과가 잘리지 않도록 협력 내용을 먼저 줄임
-  const collabLines = p.collabs.map((c) => `${c.partner || '(협력자 없음)'}: ${clip(c.how || '', 28)}`
-    + (c.result ? ` → ${c.result}` : ''));
-  pptSection(slide, '완료한 일', fitLines(done, 9), { x: 0.5, y: 2.6, w: 6.0, h: 3.0 }, '완료한 할일이 없어요.');
-  pptSection(slide, '영업 활동', fitLines(visits, 9), { x: 6.83, y: 2.6, w: 6.0, h: 3.0 }, '작성한 영업일지가 없어요.');
-  pptSection(slide, '협업 성과', fitLines(collabLines, 3), { x: 0.5, y: 5.75, w: 12.33, h: 1.45 }, '작성한 협업일지가 없어요.');
-}
-
-function pptPlanSlide(pptx, name, period, plan, nextMonStr) {
-  const slide = pptx.addSlide();
-  pptHeader(slide, pptx, `${name} · 다음주 계획`, period);
-  const MAX_ROWS = 14;
-  const cell = (text, options = {}) => ({ text, options });
-  const head = ['납기', '치과', '할 일', '상태']
-    .map((t) => cell(t, { bold: true, color: 'FFFFFF', fill: { color: PPT.accent } }));
-  const rows = plan.slice(0, MAX_ROWS).map((t) => {
-    const late = t.due && t.due < nextMonStr;
-    return [
-      cell(t.due ? `${md(parseYmd(t.due))}${late ? ' 지연' : ''}` : '-', late ? { color: PPT.danger, bold: true } : {}),
-      cell(clip(t.clinic || '', 14)),
-      cell(clip(t.text, 40)),
-      cell(COL_NAMES[t.col] || t.col),
+  page.heading('2. 주요 거래처 이슈');
+  // 관리방문 일지 + 치과명을 적은 완료 할일을 치과별로 묶음
+  const clinics = new Map();
+  const at = (clinic) => {
+    const key = (clinic || '').trim() || '(치과명 없음)';
+    if (!clinics.has(key)) clinics.set(key, { visits: [], tasks: [] });
+    return clinics.get(key);
+  };
+  visits.filter(care).forEach((j) => at(j.clinic).visits.push(j));
+  p.done.filter((t) => t.clinic?.trim()).forEach((t) => at(t.clinic).tasks.push(t));
+  page.sub('관리 거래처 (방문·처리 내역)');
+  if (!clinics.size) none();
+  clinics.forEach(({ visits: vs, tasks }, clinic) => {
+    const parts = [
+      ...vs.map((j) => `[방문 ${mdShort(parseYmd(j.visit_date))}] ${clip(j.content || '', 300)}`.trim()),
+      ...(tasks.length ? [`[처리] ${tasks.map((t) => t.text).join(', ')}`] : []),
     ];
+    page.item(`${clinic} — ${parts.join(' / ')}`);
   });
-  slide.addTable([head, ...rows], {
-    x: 0.5, y: 1.3, w: 12.33, colW: [1.7, 2.6, 6.83, 1.2], rowH: 0.36,
-    fontSize: 11, color: PPT.text, valign: 'middle', border: { type: 'solid', pt: 0.5, color: PPT.line },
+  const TEMP_ORDER = { 상: 0, 중: 1 };
+  const warm = visits.filter((j) => !care(j) && j.temperature in TEMP_ORDER)
+    .sort((a, b) => TEMP_ORDER[a.temperature] - TEMP_ORDER[b.temperature]);
+  page.sub('일반영업 (감도 중 이상)');
+  if (!warm.length) none();
+  warm.forEach((j) => {
+    const info = [j.region, `감도 ${j.temperature}`].filter(Boolean).join(', ');
+    page.item(`${j.clinic || '(치과명 없음)'} (${info})${j.content ? ` — ${clip(j.content, 300)}` : ''}`);
   });
-  if (plan.length > MAX_ROWS) {
-    slide.addText(`외 ${plan.length - MAX_ROWS}건`, { x: 0.5, y: 7.0, w: 12.33, h: 0.3, fontSize: 10, color: PPT.muted });
-  }
+
+  page.heading('3. 주요 업무 처리 현황');
+  const work = p.done.filter((t) => !t.clinic?.trim()).sort((a, b) => a.done_at.localeCompare(b.done_at));
+  if (!work.length) none();
+  work.forEach((t) => page.item(t.text));
+
+  page.heading('4. 추후 업무 계획');
+  if (!p.plan.length) none();
+  p.plan.forEach((t) => {
+    const late = t.due < today;
+    page.item(`${mdShort(parseYmd(t.due))}${late ? ' (지연)' : ''}  ${t.text}`, late ? PPT.danger : PPT.text);
+  });
 }
 
 async function buildWeeklyPpt(mondayStr) {
-  const nextMon = parseYmd(mondayStr);
-  nextMon.setDate(nextMon.getDate() + 7);
-  const nextSun = new Date(nextMon);
-  nextSun.setDate(nextSun.getDate() + 6);
   const [PptxGenJS, week, openTasks] = await Promise.all([
     loadPptx(),
     fetchWeek(mondayStr),
-    // 다음주 계획: 지금 남아 있는 할일 (아카이브 제외)
-    selectAll(() => sb.from('tasks').select('*').is('archived_at', null).in('col', ['todo', 'doing'])
+    // 추후 계획: 지금 남아 있는 할일 (아카이브 제외)
+    selectAll(() => sb.from('tasks').select('*').is('archived_at', null).eq('col', 'todo')
       .order('created_at').order('id')),
   ]);
-  const { start, weekTasks, weekJournals, weekCollabs, who, inWeek } = week;
+  const { start, weekTasks, weekJournals, who, inWeek } = week;
+  const sun = new Date(start);
+  sun.setDate(sun.getDate() + 6);
+  const sunStr = ymd(sun);
 
   const people = new Map();
   const of = (id) => {
-    if (!people.has(id)) people.set(id, { done: [], journals: [], collabs: [], plan: [] });
+    if (!people.has(id)) people.set(id, { done: [], journals: [], plan: [] });
     return people.get(id);
   };
   weekTasks.filter((t) => inWeek(t.done_at)).forEach((t) => of(t.user_id).done.push(t));
   weekJournals.forEach((j) => of(j.user_id).journals.push(j));
-  weekCollabs.forEach((c) => of(c.user_id).collabs.push(c));
-  // 다음주 일요일까지 납기인 할일(지난 납기 포함) + 납기 없이 진행 중인 할일
-  openTasks.filter((t) => (t.due ? t.due <= ymd(nextSun) : t.col === 'doing'))
+  // 치과명 없는 남은 할일 중 보고 주 이후 날짜 + 보고 주까지였는데 못 끝낸 일
+  openTasks.filter((t) => t.due && !t.clinic?.trim() && (t.due > sunStr || t.due < ymd(new Date())))
     .forEach((t) => of(t.user_id).plan.push(t));
   if (!people.size) throw new Error('이 주에는 보고할 내용이 없어요.');
 
   const pptx = new PptxGenJS();
-  pptx.layout = 'LAYOUT_WIDE';
+  pptx.defineLayout({ name: 'A4_PORTRAIT', width: 8.27, height: 11.69 });
+  pptx.layout = 'A4_PORTRAIT';
   pptx.theme = { headFontFace: PPT.font, bodyFontFace: PPT.font };
-  const sun = new Date(start);
-  sun.setDate(sun.getDate() + 6);
-  const period = `${md(start)} ~ ${md(sun)}`;
-  const planPeriod = `${md(nextMon)} ~ ${md(nextSun)}`;
-  let slides = 0;
+  const period = `${mdShort(start)}~${mdShort(sun)}`;
+  const today = ymd(new Date());
   [...people].sort(([a], [b]) => who(a).localeCompare(who(b), 'ko')).forEach(([id, p]) => {
-    pptReportSlide(pptx, who(id), period, p);
-    slides++;
-    if (p.plan.length) {
-      p.plan.sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
-      pptPlanSlide(pptx, who(id), planPeriod, p.plan, ymd(nextMon));
-      slides++;
-    }
+    p.plan.sort((a, b) => a.due.localeCompare(b.due));
+    pptReport(pptx, who(id), period, p, today);
   });
   const suffix = isMaster() ? '' : `_${profileName || '내보고'}`;
   await pptx.writeFile({ fileName: `주간보고${suffix}_${mondayStr}.pptx` });
-  return { people: people.size, slides };
+  return { people: people.size, slides: pptx.slides.length };
 }
 
 $('#reportForm').addEventListener('submit', async (e) => {
