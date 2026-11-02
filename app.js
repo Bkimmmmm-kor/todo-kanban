@@ -164,6 +164,8 @@ function trackToRow(t) {
     purpose: t.purpose || null,
     plan: t.plan || null,
     status: t.status,
+    start_date: t.start || null,
+    end_date: t.end || null,
     clinics: t.clinics,
     created_at: toIso(t.createdAt),
   };
@@ -176,13 +178,15 @@ function trackFromRow(r) {
     purpose: r.purpose || '',
     plan: r.plan || '',
     status: r.status || '진행중',
+    start: r.start_date || '',
+    end: r.end_date || '',
     clinics: Array.isArray(r.clinics) ? r.clinics : [],
     createdAt: toMs(r.created_at),
   };
 }
 
 // 진행중 트랙이 위로, 같은 상태면 최근에 만든 것이 위로
-const sortTracks = (list) => list.sort((a, b) => (a.status === '종료') - (b.status === '종료') || b.createdAt - a.createdAt);
+const sortTracks = (list) => list.sort((a, b) => trackOn(b) - trackOn(a) || b.createdAt - a.createdAt);
 
 // 영업일지·협업일지 공통: 최근 날짜가 위로
 const sortJournals = (list) => list.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
@@ -1380,7 +1384,14 @@ try {
 // 트랙: 특정 치과들의 매출을 올리려는 지원 실험 (1인 1~2개). 치과마다 진단 접수·제작 건수를 직접 셈
 const trackSum = (clinics) => clinics.reduce((s, c) => ({ dx: s.dx + (c.dx || 0), mnft: s.mnft + (c.mnft || 0) }), { dx: 0, mnft: 0 });
 const tcName = (c) => (c.region ? `${c.region}_${c.clinic}` : c.clinic);
-const tcPeriod = (c) => [c.start, c.end].filter(Boolean).map((d) => d.slice(5).replace('-', '/')).join('~');
+// 기간: 치과 종료일이 비어 있으면 트랙 종료일을 따름. 치과는 앞당겨 끝낼 수만 있음(조기 종료, 연장 불가)
+const mdSlash = (d) => d.slice(5).replace('-', '/');
+const tcEnd = (t, c) => c.end || t.end || '';
+const trackOn = (t) => t.status !== '종료' && !(t.end && t.end < ymd(new Date()));
+const tcOn = (t, c) => trackOn(t) && c.status !== '종료' && !(tcEnd(t, c) && tcEnd(t, c) < ymd(new Date()));
+const tcStatus = (t, c) => (tcOn(t, c) ? '진행중' : c.end && c.end < (t.end || '9999') ? '조기 종료' : '종료');
+const tcPeriod = (t, c) => [c.start, tcEnd(t, c)].filter(Boolean).map(mdSlash).join('~');
+const trackPeriod = (t) => (t.start && t.end ? `${mdSlash(t.start)}~${mdSlash(t.end)}` : '기간 미정');
 
 function counterEl(label, key, value) {
   const box = document.createElement('span');
@@ -1406,10 +1417,12 @@ function counterEl(label, key, value) {
 function renderTracks() {
   const items = tracks.map((t) => {
     const li = document.createElement('li');
-    li.className = `journal-item track-card${t.status === '종료' ? ' track-done' : ''}`;
+    const on = trackOn(t);
+    li.className = `journal-item track-card${on ? '' : ' track-done'}`;
     li.dataset.id = t.id;
     const head = journalHead(`🧪 ${t.title || '(이름 없음)'}`);
-    head.append(tagEl(t.status, t.status === '종료' ? '' : 'track-on'));
+    head.append(tagEl(on ? '진행중' : '종료', on ? 'track-on' : ''));
+    head.append(tagEl(`📅 ${trackPeriod(t)}`, t.start && t.end ? '' : 'due-soon'));
     li.append(head);
     if (t.purpose) li.append(collabLine('목적', t.purpose));
     if (t.plan) li.append(collabLine('진행', t.plan));
@@ -1422,14 +1435,14 @@ function renderTracks() {
     list.className = 'tc-list';
     t.clinics.forEach((c, i) => {
       const row = document.createElement('li');
-      row.className = `tc-row${c.status === '종료' ? ' tc-done' : ''}`;
+      row.className = `tc-row${tcOn(t, c) ? '' : ' tc-done'}`;
       row.dataset.idx = i;
       const main = document.createElement('div');
       main.className = 'tc-main';
       const name = document.createElement('b');
       name.textContent = tcName(c);
       const meta = document.createElement('span');
-      meta.textContent = [c.kind, c.status + (tcPeriod(c) ? `(${tcPeriod(c)})` : '')].filter(Boolean).join(' · ');
+      meta.textContent = [c.kind, `${tcStatus(t, c)}(${tcPeriod(t, c)})`].filter(Boolean).join(' · ');
       main.append(name, meta);
       const counts = document.createElement('div');
       counts.className = 'tc-counts';
@@ -1458,13 +1471,15 @@ function openTrack(id = null) {
   $('#tTitle').value = t?.title || '';
   $('#tPurpose').value = t?.purpose || '';
   $('#tPlan').value = t?.plan || '';
+  $('#tStart').value = t?.start || ymd(new Date());
+  $('#tEnd').value = t?.end || '';
   setSeg($('#tStatus'), t?.status || '진행중');
   $('#tDeleteBtn').hidden = !t;
   trackDialog.showModal();
 }
 
 $('#newTrackBtn').addEventListener('click', () => {
-  if (tracks.filter((t) => t.status === '진행중').length >= 2) showToast('트랙은 1~2개로 운영해요. 끝난 트랙은 종료로 바꿔 주세요.');
+  if (tracks.filter(trackOn).length >= 2) showToast('트랙은 1~2개로 운영해요. 끝난 트랙은 종료로 바꿔 주세요.');
   openTrack();
 });
 
@@ -1474,13 +1489,25 @@ $('#trackForm').addEventListener('submit', (e) => {
     purpose: $('#tPurpose').value.trim(),
     plan: $('#tPlan').value.trim(),
     status: segValue($('#tStatus')) || '진행중',
+    start: $('#tStart').value,
+    end: $('#tEnd').value,
   };
-  if (!data.title) {
+  const stop = (msg) => {
     e.preventDefault();
-    showToast('트랙 이름을 적어 주세요.');
-    return;
-  }
+    showToast(msg);
+  };
+  if (!data.title) return stop('트랙 이름을 적어 주세요.');
+  if (!data.start || !data.end) return stop('트랙 시작일과 종료일을 정해 주세요.');
+  if (data.end < data.start) return stop('종료일이 시작일보다 빨라요.');
   const existing = tracks.find((x) => x.id === editTrackId);
+  // 트랙 기간이 줄면 치과 기간도 그 안으로 (종료일이 트랙보다 늦은 치과는 트랙 종료일을 따름)
+  if (existing) {
+    data.clinics = existing.clinics.map((c) => ({
+      ...c,
+      start: c.start && c.start < data.start ? data.start : c.start,
+      end: c.end && c.end >= data.end ? '' : c.end,
+    }));
+  }
   if (existing) Object.assign(existing, data);
   else tracks.push({ id: newId(), createdAt: Date.now(), clinics: [], ...data });
   sortTracks(tracks);
@@ -1514,14 +1541,25 @@ function openTrackClinic(id, idx = null) {
   const t = tracks.find((x) => x.id === id);
   if (!t) return;
   const c = idx === null ? null : t.clinics[idx];
+  if (!t.start || !t.end) {
+    showToast('먼저 트랙 기간(시작일·종료일)을 정해 주세요.');
+    openTrack(id);
+    return;
+  }
   tcEdit = { id, idx: c ? idx : null };
   $('#tcDialogTitle').textContent = c ? '치과 수정' : `치과 추가 · ${t.title}`;
+  $('#tcPeriodHint').textContent = `트랙 기간 ${trackPeriod(t)} 안에서만 정할 수 있어요. 종료일은 앞당길 수만 있어요(조기 종료).`;
+  for (const el of [$('#tcStart'), $('#tcEnd')]) {
+    el.min = t.start;
+    el.max = t.end;
+  }
   $('#tcRegion').value = c?.region || '';
   $('#tcClinic').value = c?.clinic || '';
   setSeg($('#tcKind'), c?.kind || '');
   setSeg($('#tcStatus'), c?.status || '진행중');
-  $('#tcStart').value = c?.start || ymd(new Date());
-  $('#tcEnd').value = c?.end || '';
+  const today = ymd(new Date());
+  $('#tcStart').value = c?.start || (today < t.start ? t.start : today > t.end ? t.end : today);
+  $('#tcEnd').value = c ? tcEnd(t, c) : t.end;
   $('#tcDx').value = c?.dx || 0;
   $('#tcMnft').value = c?.mnft || 0;
   $('#tcDeleteBtn').hidden = !c;
@@ -1542,16 +1580,21 @@ $('#trackClinicForm').addEventListener('submit', (e) => {
     dx: countValue('#tcDx'),
     mnft: countValue('#tcMnft'),
   };
-  if (!t || !data.clinic) {
+  const stop = (msg) => {
     e.preventDefault();
-    showToast('치과명을 적어 주세요.');
-    return;
+    showToast(msg);
+  };
+  if (!t || !data.clinic) return stop('치과명을 적어 주세요.');
+  if (!data.start) return stop('치과 시작일을 정해 주세요.');
+  if (data.start < t.start) return stop(`시작일은 트랙 시작일(${mdSlash(t.start)}) 이후여야 해요.`);
+  if (data.end > t.end) return stop(`연장은 안 돼요. 종료일은 트랙 종료일(${mdSlash(t.end)})까지예요.`);
+  if (data.end && data.end < data.start) return stop('종료일이 시작일보다 빨라요.');
+  // 조기 종료를 골랐는데 종료일이 트랙 종료일 그대로면 오늘로 앞당김
+  if (data.status === '종료' && (!data.end || data.end === t.end)) {
+    const today = ymd(new Date());
+    data.end = today < data.start ? data.start : today > t.end ? t.end : today;
   }
-  if (data.start && data.end && data.end < data.start) {
-    e.preventDefault();
-    showToast('종료일이 시작일보다 빨라요.');
-    return;
-  }
+  if (data.end === t.end) data.end = ''; // 트랙 종료일을 따름 (트랙 기간이 바뀌어도 같이 바뀜)
   t.clinics = tcEdit.idx === null ? [...t.clinics, data] : t.clinics.map((c, i) => (i === tcEdit.idx ? data : c));
   save();
   renderTracks();
@@ -2571,7 +2614,7 @@ function pptTracks(pptx, name, list) {
     return;
   }
   list.forEach((t, i) => {
-    page.heading(`트랙 ${i + 1}. ${t.title || '(이름 없음)'}`);
+    page.heading(`트랙 ${i + 1}. ${t.title || '(이름 없음)'} (${trackPeriod(t)})`);
     page.item(`목적: ${t.purpose || '-'}`);
     page.item(`진행 방법: ${t.plan || '-'}`);
     if (!t.clinics.length) {
@@ -2580,7 +2623,7 @@ function pptTracks(pptx, name, list) {
     }
     const sum = trackSum(t.clinics);
     const rows = t.clinics.map((c) => ({
-      cells: [clip(tcName(c), 20), c.kind || '-', c.status + (tcPeriod(c) ? `(${tcPeriod(c)})` : ''), c.dx || 0, c.mnft || 0],
+      cells: [clip(tcName(c), 20), c.kind || '-', `${tcStatus(t, c)}(${tcPeriod(t, c)})`, c.dx || 0, c.mnft || 0],
     }));
     rows.push({ cells: [`합계 (${t.clinics.length}곳)`, '', '', sum.dx, sum.mnft], bold: true });
     page.table(['지역_치과명', '유형', '상태(기간)', '진단', '제작'], rows, [2.7, 0.8, 2.07, 0.75, 0.75],
@@ -2671,7 +2714,9 @@ async function buildWeeklyPpt(mondayStr) {
   openTasks.forEach((t) => of(t.user_id).plan.push(t));
   if (!master) of(user.id); // 영업사원은 내용이 없어도 본인 보고서를 만듦
   const trackBy = new Map();
+  // 기간이 지난 트랙은 빼고
   trackRows.map(trackFromRow).forEach((t, i) => {
+    if (!trackOn(t)) return;
     const id = trackRows[i].user_id;
     if (!trackBy.has(id)) trackBy.set(id, []);
     trackBy.get(id).push(t);
@@ -2793,12 +2838,15 @@ async function buildFullBackup() {
   // 실험트랙: 치과 한 곳당 한 줄 (치과가 없으면 트랙만 한 줄)
   const trackSheet = trackRows.flatMap((r) => {
     const t = trackFromRow(r);
-    const base = { 영업사원: who(r.user_id), 트랙: t.title, 트랙상태: t.status, 목적: t.purpose, 진행방법: t.plan };
+    const base = {
+      영업사원: who(r.user_id), 트랙: t.title, 트랙상태: trackOn(t) ? '진행중' : '종료',
+      트랙시작일: t.start, 트랙종료일: t.end, 목적: t.purpose, 진행방법: t.plan,
+    };
     const tail = { 작성일시: fmtDateTime(r.created_at), ID: r.id, 사용자ID: r.user_id };
     if (!t.clinics.length) return [{ ...base, ...tail }];
     return t.clinics.map((c) => ({
-      ...base, 지역: c.region || '', 치과명: c.clinic || '', 유형: c.kind || '', 치과상태: c.status || '',
-      시작일: c.start || '', 종료일: c.end || '', 진단: c.dx || 0, 제작: c.mnft || 0, ...tail,
+      ...base, 지역: c.region || '', 치과명: c.clinic || '', 유형: c.kind || '',
+      치과상태: tcStatus(t, c), 시작일: c.start || '', 종료일: tcEnd(t, c), 진단: c.dx || 0, 제작: c.mnft || 0, ...tail,
     }));
   }).sort(byName);
 
@@ -2846,8 +2894,8 @@ async function buildFullBackup() {
     ['영업사원', '날짜', '요일', '협력자', '치과명', '협력내용', '결과', '작성일시', 'ID', '사용자ID'],
     [12, 12, 6, 16, 20, 45, 45, 17, 16, 38]), '협업일지');
   XLSX.utils.book_append_sheet(wb, sheet(trackSheet,
-    ['영업사원', '트랙', '트랙상태', '목적', '진행방법', '지역', '치과명', '유형', '치과상태', '시작일', '종료일', '진단', '제작', '작성일시', 'ID', '사용자ID'],
-    [12, 24, 8, 36, 36, 10, 20, 8, 8, 12, 12, 6, 6, 17, 16, 38]), '실험트랙');
+    ['영업사원', '트랙', '트랙상태', '트랙시작일', '트랙종료일', '목적', '진행방법', '지역', '치과명', '유형', '치과상태', '시작일', '종료일', '진단', '제작', '작성일시', 'ID', '사용자ID'],
+    [12, 24, 8, 12, 12, 36, 36, 10, 20, 8, 9, 12, 12, 6, 6, 17, 16, 38]), '실험트랙');
   XLSX.utils.book_append_sheet(wb, sheet(boardSheet, ['종류', '내용', '할인', '종료일', '수정일시'], [10, 60, 40, 12, 17]), '공지·프로모션');
 
   XLSX.writeFile(wb, `할일보드_전체백업_${ymd(now)}.xlsx`);
