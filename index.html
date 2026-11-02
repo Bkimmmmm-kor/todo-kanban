@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -133,10 +133,57 @@
     </div>
   </section>
 
+  <!-- ========== 실험트랙 ========== -->
+  <section class="view" data-view="track" hidden>
+    <main class="scroll">
+      <p class="hint track-hint">특정 치과의 매출을 올리기 위한 지원 실험이에요. 한 사람당 1~2개 트랙으로 운영해요.</p>
+      <ul id="trackList" class="journal-list"></ul>
+      <p class="empty journal-empty">아직 실험트랙이 없어요.<br>아래 버튼으로 첫 트랙을 만들어 보세요.</p>
+    </main>
+    <div class="action-bar">
+      <button id="newTrackBtn" class="primary-btn">＋ 실험트랙 만들기</button>
+    </div>
+  </section>
+
+  <!-- ========== 알림톡 내역 (영업채널) ========== -->
+  <section class="view" data-view="alim" hidden>
+    <!-- 알림톡: 사내 미니PC가 30분마다 올린 최근 7일 기록 (어디서나) -->
+    <main class="scroll">
+      <div class="segmented alim-days" id="alimDays">
+        <button type="button" data-value="0">오늘</button>
+        <button type="button" data-value="2">3일</button>
+        <button type="button" data-value="6" class="on">7일</button>
+      </div>
+      <div class="alim-filters">
+        <select id="alimClinic" aria-label="치과"><option value="">전체 치과</option></select>
+        <label class="alim-fail"><input type="checkbox" id="alimFailOnly"> 실패만</label>
+      </div>
+      <p class="alim-summary" id="alimSummary"></p>
+      <ul class="journal-list" id="alimList"></ul>
+      <p class="empty alim-empty" id="alimEmpty">알림톡 발송 내역이 없어요.</p>
+    </main>
+  </section>
+
+  <!-- ========== 월별 매출 목표 달성현황 (마스터) ========== -->
+  <section class="view" data-view="sales" hidden>
+    <main class="scroll">
+      <div class="sales-cur" id="salesCur"></div>
+      <div class="sales-card">
+        <p class="sales-card-title" id="salesChartTitle">월별 목표 대비 실적</p>
+        <div id="salesChart"></div>
+        <p class="sales-legend"><i class="lg-target"></i>목표 <i class="lg-actual"></i>실적(마감) <i class="lg-open"></i>진행 중</p>
+      </div>
+      <p class="sales-summary" id="salesSummary"></p>
+      <table class="sales-table" id="salesTable"></table>
+      <button id="targetBtn" class="secondary-btn" type="button">🎯 목표 수정</button>
+      <p class="hint" id="salesSynced"></p>
+    </main>
+  </section>
+
   <!-- ========== 세일즈가이드 ========== -->
   <section class="view" data-view="calc" hidden>
     <nav class="tabs guide-tabs" id="guideTabs">
-      <button class="tab" data-guide="calc">🧮 계산기</button>
+      <button class="tab" data-guide="calc">🧮 패키지 계산기</button>
       <button class="tab" data-guide="date">📅 날짜계산기</button>
       <button class="tab" data-guide="ment">💬 자주쓰는멘트</button>
     </nav>
@@ -221,7 +268,6 @@
     <nav class="tabs guide-tabs" id="clinicTabs">
       <button class="tab" data-clinic="board">🦷 현황판</button>
       <button class="tab" data-clinic="ar">💰 미납</button>
-      <button class="tab" data-clinic="alim">💬 알림톡</button>
       <button class="tab" data-clinic="invoice">🧾 명세서</button>
     </nav>
     <!-- 현황판·미납은 회사 DB를 보는 사내 서버에서만 열림 (새 탭) -->
@@ -243,21 +289,6 @@
         <p class="office-note"></p>
       </div>
     </main>
-    <!-- 알림톡: 사내 미니PC가 30분마다 올린 최근 7일 기록 (어디서나) -->
-    <main class="scroll" data-clinic-pane="alim" hidden>
-      <div class="segmented alim-days" id="alimDays">
-        <button type="button" data-value="0">오늘</button>
-        <button type="button" data-value="2">3일</button>
-        <button type="button" data-value="6" class="on">7일</button>
-      </div>
-      <div class="alim-filters">
-        <select id="alimClinic" aria-label="치과"><option value="">전체 치과</option></select>
-        <label class="alim-fail"><input type="checkbox" id="alimFailOnly"> 실패만</label>
-      </div>
-      <p class="alim-summary" id="alimSummary"></p>
-      <ul class="journal-list" id="alimList"></ul>
-      <p class="empty alim-empty" id="alimEmpty">알림톡 발송 내역이 없어요.</p>
-    </main>
     <main class="scroll" data-clinic-pane="invoice" hidden>
       <div class="coming-soon">
         <span class="cs-icon">🚧</span>
@@ -275,13 +306,15 @@
       <button data-view="todo">✅ 할일</button>
       <button data-view="journal">📝 영업일지</button>
       <button data-view="collab">🤝 협업일지</button>
+      <button data-view="track">🧪 실험트랙</button>
+      <button data-view="alim">💬 알림톡 내역</button>
+      <button data-view="sales" id="salesNavBtn" hidden>📈 월별 매출 목표 (마스터)</button>
       <p class="drawer-group">치과 <span class="drawer-soon">영업채널</span></p>
       <button data-view="clinic" data-sub="board">🦷 치과 현황판</button>
       <button data-view="clinic" data-sub="ar">💰 미납·미수</button>
-      <button data-view="clinic" data-sub="alim">💬 알림톡 내역</button>
       <button data-view="clinic" data-sub="invoice">🧾 거래명세서</button>
       <p class="drawer-group">세일즈가이드</p>
-      <button data-view="calc" data-sub="calc">🧮 계산기</button>
+      <button data-view="calc" data-sub="calc">🧮 패키지 계산기</button>
       <button data-view="calc" data-sub="date">📅 날짜계산기</button>
       <button data-view="calc" data-sub="ment">💬 자주쓰는멘트</button>
       <p class="drawer-group">보고</p>
@@ -385,6 +418,73 @@
     </form>
   </dialog>
 
+  <!-- 실험트랙 만들기/수정 -->
+  <dialog id="trackDialog" class="sheet tall">
+    <form id="trackForm" method="dialog" class="edit-form" autocomplete="off">
+      <p id="trackDialogTitle" class="sheet-title" tabindex="-1" autofocus>실험트랙 만들기</p>
+      <label>트랙 이름<input id="tTitle" type="text" required placeholder="예: 교정페이 치과 첫 케이스 지원"></label>
+      <label>목적<textarea id="tPurpose" rows="3" placeholder="예: 교정 경험이 적은 치과의 첫 케이스 발생"></textarea></label>
+      <label>진행 방법<textarea id="tPlan" rows="3" placeholder="예: 셋업 상담 동행 + 첫 케이스 할인"></textarea></label>
+      <p class="field-label">상태</p>
+      <div class="segmented" id="tStatus">
+        <button type="button" data-value="진행중">진행중</button>
+        <button type="button" data-value="종료">종료</button>
+      </div>
+      <div class="edit-actions">
+        <button type="button" id="tDeleteBtn" class="danger" hidden>삭제</button>
+        <button type="button" data-action="close" class="muted">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 실험트랙 치과 추가/수정 -->
+  <dialog id="trackClinicDialog" class="sheet tall">
+    <form id="trackClinicForm" method="dialog" class="edit-form" autocomplete="off">
+      <p id="tcDialogTitle" class="sheet-title" tabindex="-1" autofocus>치과 추가</p>
+      <div class="two-col">
+        <label>지역<input id="tcRegion" type="text" list="regionList" placeholder="예: 은계"></label>
+        <label>치과명<input id="tcClinic" type="text" list="clinicList" required placeholder="치과명"></label>
+      </div>
+      <p class="field-label">유형</p>
+      <div class="segmented" id="tcKind">
+        <button type="button" data-value="교정">교정</button>
+        <button type="button" data-value="비교정">비교정</button>
+      </div>
+      <p class="field-label">상태</p>
+      <div class="segmented" id="tcStatus">
+        <button type="button" data-value="진행중">진행중</button>
+        <button type="button" data-value="종료">종료</button>
+      </div>
+      <div class="two-col">
+        <label>시작일<input id="tcStart" type="date"></label>
+        <label>종료일<input id="tcEnd" type="date"></label>
+      </div>
+      <div class="two-col">
+        <label>진단 접수 (건)<input id="tcDx" type="number" min="0" inputmode="numeric" value="0"></label>
+        <label>제작 (건)<input id="tcMnft" type="number" min="0" inputmode="numeric" value="0"></label>
+      </div>
+      <div class="edit-actions">
+        <button type="button" id="tcDeleteBtn" class="danger" hidden>삭제</button>
+        <button type="button" data-action="close" class="muted">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 월별 매출 목표 수정 (마스터) -->
+  <dialog id="targetDialog" class="sheet tall">
+    <form id="targetForm" method="dialog" class="edit-form" autocomplete="off">
+      <p id="targetDialogTitle" class="sheet-title">매출 목표 수정</p>
+      <p class="sheet-desc">월별 목표 (백만원 단위)</p>
+      <div class="target-grid" id="targetGrid"></div>
+      <div class="edit-actions">
+        <button type="button" data-action="close" class="muted">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- 공지/프로모션 작성 (마스터) -->
   <dialog id="noteDialog" class="sheet">
     <form id="noteForm" method="dialog" class="edit-form">
@@ -425,7 +525,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 25</p>
+    <p class="sheet-desc">앱 버전 26</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -466,7 +566,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=25"></script>
-  <script src="app.js?v=25"></script>
+  <script src="calc.js?v=26"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>

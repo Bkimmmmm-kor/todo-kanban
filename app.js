@@ -15,7 +15,10 @@ const ARCHIVE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COLS = ['todo', 'done']; // v23: '진행 중' 칸 없앰 (예전 카드는 dropDoing 이 할 일로 옮김)
 const COL_NAMES = { todo: '할 일', done: '완료' };
-const VIEWS = { todo: '할일', journal: '영업일지', collab: '협업일지', clinic: '치과', calc: '세일즈가이드' };
+const VIEWS = {
+  todo: '할일', journal: '영업일지', collab: '협업일지', track: '실험트랙', alim: '알림톡 내역', sales: '월별 매출 목표',
+  clinic: '치과', calc: '세일즈가이드',
+};
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const LONG_PRESS_MS = 500;
 
@@ -39,6 +42,7 @@ let tasks = [];
 let archive = [];
 let journals = [];
 let collabs = []; // 협업일지
+let tracks = []; // 실험트랙
 let notes = { notice: '', promo: '' }; // 공지 / 프로모션 문구
 let promo = { discounts: {}, until: '' }; // 프로모션 패키지별 할인액(원), 종료일
 let activeCol = 'todo';
@@ -152,6 +156,34 @@ function collabFromRow(r) {
   };
 }
 
+// 실험트랙: 치과 목록(clinics)은 통째로 jsonb 한 칸에 저장
+function trackToRow(t) {
+  return {
+    id: t.id,
+    title: t.title || null,
+    purpose: t.purpose || null,
+    plan: t.plan || null,
+    status: t.status,
+    clinics: t.clinics,
+    created_at: toIso(t.createdAt),
+  };
+}
+
+function trackFromRow(r) {
+  return {
+    id: r.id,
+    title: r.title || '',
+    purpose: r.purpose || '',
+    plan: r.plan || '',
+    status: r.status || '진행중',
+    clinics: Array.isArray(r.clinics) ? r.clinics : [],
+    createdAt: toMs(r.created_at),
+  };
+}
+
+// 진행중 트랙이 위로, 같은 상태면 최근에 만든 것이 위로
+const sortTracks = (list) => list.sort((a, b) => (a.status === '종료') - (b.status === '종료') || b.createdAt - a.createdAt);
+
 // 영업일지·협업일지 공통: 최근 날짜가 위로
 const sortJournals = (list) => list.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
 
@@ -186,6 +218,15 @@ const stores = {
     fromRow: collabFromRow,
     synced: new Map(),
   },
+  tracks: {
+    items: () => tracks,
+    toRow: trackToRow,
+    apply(rows) {
+      tracks = sortTracks(rows.map(trackFromRow));
+    },
+    fromRow: trackFromRow,
+    synced: new Map(),
+  },
 };
 
 // ---------- 저장 / 동기화 ----------
@@ -201,7 +242,7 @@ function saveCache() {
   if (!user) return;
   try {
     localStorage.setItem(cacheKey(), JSON.stringify({
-      tasks, archive, journals, collabs, notes, promo, profileName, priceData: priceTable, approved: accessOk,
+      tasks, archive, journals, collabs, tracks, notes, promo, profileName, priceData: priceTable, approved: accessOk,
       synced: Object.fromEntries(Object.entries(stores).map(([k, s]) => [k, [...s.synced]])),
     }));
   } catch { /* 저장 공간 부족 등: 서버 저장은 계속됨 */ }
@@ -216,6 +257,7 @@ function loadCache() {
     // 예전 캐시의 교정과 O/X → 구분으로 변환
     journals = (data.journals || []).map((j) => ('type' in j ? j : { ...j, type: clinicType({ is_ortho: j.ortho }) }));
     collabs = data.collabs || [];
+    tracks = data.tracks || [];
     notes = data.notes || notes;
     promo = data.promo || promo;
     dropDoing();
@@ -302,18 +344,19 @@ async function pull() {
   try {
     if (!(await queuePush())) return;
     const uid = user.id;
-    const [taskData, journalData, collabData, boardRes, priceRes] = await Promise.all([
+    const [taskData, journalData, collabData, trackData, boardRes, priceRes] = await Promise.all([
       // 마스터는 모든 사람 것을 볼 수 있으므로 내 것만 받음
       selectAll(() => sb.from('tasks').select('*').eq('user_id', uid).order('id')),
       selectAll(() => sb.from('journals').select('*').eq('user_id', uid).order('id')),
       selectAll(() => sb.from('collabs').select('*').eq('user_id', uid).order('id')),
+      selectAll(() => sb.from('tracks').select('*').eq('user_id', uid).order('id')),
       sb.from('board').select('kind, body, data'),
       sb.from('price_table').select('data').maybeSingle(),
     ]);
     if (boardRes.error) throw boardRes.error;
     if (user?.id !== uid) return; // 받는 사이 로그아웃
     if (hasPending()) return; // 받는 사이에 화면에서 바뀜 → 다음 동기화 때 반영
-    for (const [table, data] of [['tasks', taskData], ['journals', journalData], ['collabs', collabData]]) {
+    for (const [table, data] of [['tasks', taskData], ['journals', journalData], ['collabs', collabData], ['tracks', trackData]]) {
       const store = stores[table];
       store.apply(data);
       store.synced = new Map(data.map((r) => [r.id, JSON.stringify(store.toRow(store.fromRow(r)))]));
@@ -365,13 +408,15 @@ function purgeArchive() {
 }
 
 // ---------- 메뉴 전환 ----------
-// sub: 그 화면의 안쪽 탭 (세일즈가이드: calc/date/ment, 치과: board/invoice/alim)
+// sub: 그 화면의 안쪽 탭 (세일즈가이드: calc/date/ment, 치과: board/ar/invoice)
 function setView(view, sub) {
-  if (!VIEWS[view]) view = 'todo';
+  if (!VIEWS[view] || (view === 'sales' && !isMaster())) view = 'todo';
   document.body.dataset.view = view;
   $$('.view').forEach((v) => (v.hidden = v.dataset.view !== view));
   if (sub && view === 'calc') setGuideTab(sub);
   if (sub && view === 'clinic') setClinicTab(sub);
+  if (view === 'alim') loadAlim();
+  if (view === 'sales') loadSales();
   $('#pageTitle').textContent = VIEWS[view];
   markDrawer();
   try {
@@ -396,6 +441,7 @@ function markDrawer() {
 
 $('#menuBtn').addEventListener('click', () => {
   $('#reportBtn').hidden = !isMaster();
+  $('#salesNavBtn').hidden = !isMaster();
   markDrawer();
   drawer.showModal();
 });
@@ -409,6 +455,7 @@ function renderAll() {
   renderTasks();
   renderJournals();
   renderCollabs();
+  renderTracks();
   renderNotes();
   renderAutocomplete();
 }
@@ -648,8 +695,9 @@ function renderAutocomplete() {
     opt.value = v;
     return opt;
   }));
-  fill('#clinicList', [...journals, ...collabs, ...tasks, ...archive].map((t) => t.clinic));
-  fill('#regionList', journals.map((j) => j.region));
+  const trackClinics = tracks.flatMap((t) => t.clinics);
+  fill('#clinicList', [...journals, ...collabs, ...tasks, ...archive, ...trackClinics].map((t) => t.clinic));
+  fill('#regionList', [...journals, ...trackClinics].map((j) => j.region));
   fill('#partnerList', collabs.map((c) => c.partner));
 }
 
@@ -1235,10 +1283,9 @@ $('#guideTabs').addEventListener('click', (e) => {
 const CLINIC_KEY = 'clinic-tab';
 const canSales = () => isMaster() || salesAccess;
 function setClinicTab(tab) {
-  if (!['board', 'ar', 'alim', 'invoice'].includes(tab)) tab = 'board';
+  if (!['board', 'ar', 'invoice'].includes(tab)) tab = 'board';
   $$('#clinicTabs .tab').forEach((b) => b.setAttribute('aria-selected', b.dataset.clinic === tab));
   $$('[data-clinic-pane]').forEach((p) => (p.hidden = p.dataset.clinicPane !== tab));
-  if (tab === 'alim') loadAlim();
   try {
     localStorage.setItem(CLINIC_KEY, tab);
   } catch { /* 무시 */ }
@@ -1328,6 +1375,368 @@ try {
 } catch {
   setClinicTab('board');
 }
+
+// ================= 실험트랙 =================
+// 트랙: 특정 치과들의 매출을 올리려는 지원 실험 (1인 1~2개). 치과마다 진단 접수·제작 건수를 직접 셈
+const trackSum = (clinics) => clinics.reduce((s, c) => ({ dx: s.dx + (c.dx || 0), mnft: s.mnft + (c.mnft || 0) }), { dx: 0, mnft: 0 });
+const tcName = (c) => (c.region ? `${c.region}_${c.clinic}` : c.clinic);
+const tcPeriod = (c) => [c.start, c.end].filter(Boolean).map((d) => d.slice(5).replace('-', '/')).join('~');
+
+function counterEl(label, key, value) {
+  const box = document.createElement('span');
+  box.className = 'tc-count';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const minus = document.createElement('button');
+  minus.type = 'button';
+  minus.dataset.step = `${key}:-1`;
+  minus.textContent = '−';
+  minus.setAttribute('aria-label', `${label} 빼기`);
+  const num = document.createElement('b');
+  num.textContent = value || 0;
+  const plus = document.createElement('button');
+  plus.type = 'button';
+  plus.dataset.step = `${key}:1`;
+  plus.textContent = '＋';
+  plus.setAttribute('aria-label', `${label} 더하기`);
+  box.append(name, minus, num, plus);
+  return box;
+}
+
+function renderTracks() {
+  const items = tracks.map((t) => {
+    const li = document.createElement('li');
+    li.className = `journal-item track-card${t.status === '종료' ? ' track-done' : ''}`;
+    li.dataset.id = t.id;
+    const head = journalHead(`🧪 ${t.title || '(이름 없음)'}`);
+    head.append(tagEl(t.status, t.status === '종료' ? '' : 'track-on'));
+    li.append(head);
+    if (t.purpose) li.append(collabLine('목적', t.purpose));
+    if (t.plan) li.append(collabLine('진행', t.plan));
+    const sum = trackSum(t.clinics);
+    const total = document.createElement('p');
+    total.className = 'track-total';
+    total.textContent = `치과 ${t.clinics.length}곳 · 진단 ${sum.dx}건 · 제작 ${sum.mnft}건`;
+    li.append(total);
+    const list = document.createElement('ul');
+    list.className = 'tc-list';
+    t.clinics.forEach((c, i) => {
+      const row = document.createElement('li');
+      row.className = `tc-row${c.status === '종료' ? ' tc-done' : ''}`;
+      row.dataset.idx = i;
+      const main = document.createElement('div');
+      main.className = 'tc-main';
+      const name = document.createElement('b');
+      name.textContent = tcName(c);
+      const meta = document.createElement('span');
+      meta.textContent = [c.kind, c.status + (tcPeriod(c) ? `(${tcPeriod(c)})` : '')].filter(Boolean).join(' · ');
+      main.append(name, meta);
+      const counts = document.createElement('div');
+      counts.className = 'tc-counts';
+      counts.append(counterEl('진단', 'dx', c.dx), counterEl('제작', 'mnft', c.mnft));
+      row.append(main, counts);
+      list.append(row);
+    });
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'tc-add';
+    add.textContent = '＋ 치과 추가';
+    li.append(list, add);
+    return li;
+  });
+  $('#trackList').replaceChildren(...items);
+}
+
+const trackDialog = $('#trackDialog');
+let editTrackId = null;
+bindSeg($('#tStatus'), null, false);
+
+function openTrack(id = null) {
+  const t = tracks.find((x) => x.id === id);
+  editTrackId = t ? t.id : null;
+  $('#trackDialogTitle').textContent = t ? '실험트랙 수정' : '실험트랙 만들기';
+  $('#tTitle').value = t?.title || '';
+  $('#tPurpose').value = t?.purpose || '';
+  $('#tPlan').value = t?.plan || '';
+  setSeg($('#tStatus'), t?.status || '진행중');
+  $('#tDeleteBtn').hidden = !t;
+  trackDialog.showModal();
+}
+
+$('#newTrackBtn').addEventListener('click', () => {
+  if (tracks.filter((t) => t.status === '진행중').length >= 2) showToast('트랙은 1~2개로 운영해요. 끝난 트랙은 종료로 바꿔 주세요.');
+  openTrack();
+});
+
+$('#trackForm').addEventListener('submit', (e) => {
+  const data = {
+    title: $('#tTitle').value.trim(),
+    purpose: $('#tPurpose').value.trim(),
+    plan: $('#tPlan').value.trim(),
+    status: segValue($('#tStatus')) || '진행중',
+  };
+  if (!data.title) {
+    e.preventDefault();
+    showToast('트랙 이름을 적어 주세요.');
+    return;
+  }
+  const existing = tracks.find((x) => x.id === editTrackId);
+  if (existing) Object.assign(existing, data);
+  else tracks.push({ id: newId(), createdAt: Date.now(), clinics: [], ...data });
+  sortTracks(tracks);
+  save();
+  renderTracks();
+  vibrate(30);
+  showToast(existing ? '실험트랙을 수정했어요.' : '실험트랙을 만들었어요. ＋ 치과 추가로 치과를 넣어 보세요.');
+});
+
+$('#tDeleteBtn').addEventListener('click', () => {
+  const index = tracks.findIndex((x) => x.id === editTrackId);
+  if (index < 0) return;
+  const [removed] = tracks.splice(index, 1);
+  trackDialog.close();
+  save();
+  renderTracks();
+  showToast('실험트랙을 삭제했어요.', () => {
+    tracks.push(removed);
+    sortTracks(tracks);
+    save();
+    renderTracks();
+  });
+});
+
+const tcDialog = $('#trackClinicDialog');
+let tcEdit = null; // { id: 트랙 id, idx: 치과 순번 또는 null(추가) }
+bindSeg($('#tcKind'));
+bindSeg($('#tcStatus'), null, false);
+
+function openTrackClinic(id, idx = null) {
+  const t = tracks.find((x) => x.id === id);
+  if (!t) return;
+  const c = idx === null ? null : t.clinics[idx];
+  tcEdit = { id, idx: c ? idx : null };
+  $('#tcDialogTitle').textContent = c ? '치과 수정' : `치과 추가 · ${t.title}`;
+  $('#tcRegion').value = c?.region || '';
+  $('#tcClinic').value = c?.clinic || '';
+  setSeg($('#tcKind'), c?.kind || '');
+  setSeg($('#tcStatus'), c?.status || '진행중');
+  $('#tcStart').value = c?.start || ymd(new Date());
+  $('#tcEnd').value = c?.end || '';
+  $('#tcDx').value = c?.dx || 0;
+  $('#tcMnft').value = c?.mnft || 0;
+  $('#tcDeleteBtn').hidden = !c;
+  tcDialog.showModal();
+}
+
+const countValue = (sel) => Math.max(0, Math.floor(Number($(sel).value) || 0));
+
+$('#trackClinicForm').addEventListener('submit', (e) => {
+  const t = tracks.find((x) => x.id === tcEdit?.id);
+  const data = {
+    region: $('#tcRegion').value.trim(),
+    clinic: $('#tcClinic').value.trim(),
+    kind: segValue($('#tcKind')) || '',
+    status: segValue($('#tcStatus')) || '진행중',
+    start: $('#tcStart').value || '',
+    end: $('#tcEnd').value || '',
+    dx: countValue('#tcDx'),
+    mnft: countValue('#tcMnft'),
+  };
+  if (!t || !data.clinic) {
+    e.preventDefault();
+    showToast('치과명을 적어 주세요.');
+    return;
+  }
+  if (data.start && data.end && data.end < data.start) {
+    e.preventDefault();
+    showToast('종료일이 시작일보다 빨라요.');
+    return;
+  }
+  t.clinics = tcEdit.idx === null ? [...t.clinics, data] : t.clinics.map((c, i) => (i === tcEdit.idx ? data : c));
+  save();
+  renderTracks();
+  renderAutocomplete();
+  vibrate(30);
+  showToast(tcEdit.idx === null ? '치과를 추가했어요.' : '치과를 수정했어요.');
+});
+
+$('#tcDeleteBtn').addEventListener('click', () => {
+  const t = tracks.find((x) => x.id === tcEdit?.id);
+  if (!t || tcEdit.idx === null) return;
+  const before = t.clinics;
+  t.clinics = before.filter((_, i) => i !== tcEdit.idx);
+  tcDialog.close();
+  save();
+  renderTracks();
+  showToast('치과를 뺐어요.', () => {
+    t.clinics = before;
+    save();
+    renderTracks();
+  });
+});
+
+// 카드: −/＋ 는 바로 세기, 치과 줄은 치과 수정, '＋ 치과 추가', 나머지는 트랙 수정
+$('#trackList').addEventListener('click', (e) => {
+  const card = e.target.closest('.track-card');
+  const t = card && tracks.find((x) => x.id === card.dataset.id);
+  if (!t) return;
+  const row = e.target.closest('.tc-row');
+  const step = e.target.closest('[data-step]')?.dataset.step;
+  if (step && row) {
+    const [key, d] = step.split(':');
+    const i = Number(row.dataset.idx);
+    t.clinics = t.clinics.map((c, n) => (n === i ? { ...c, [key]: Math.max(0, (c[key] || 0) + Number(d)) } : c));
+    save();
+    renderTracks();
+    vibrate(15);
+  } else if (row) openTrackClinic(t.id, Number(row.dataset.idx));
+  else if (e.target.closest('.tc-add')) openTrackClinic(t.id);
+  else openTrack(t.id);
+});
+
+// ================= 월별 매출 목표 달성현황 (마스터) =================
+// 사내 미니PC가 30분마다 월 합계(sales_monthly)를 올림. 청구월 = 전월 26일 ~ 당월 25일
+function billingMonth(d = new Date()) {
+  let y = d.getFullYear();
+  let m = d.getMonth() + 1;
+  if (d.getDate() >= 26) [y, m] = m === 12 ? [y + 1, 1] : [y, m + 1];
+  return { y, m };
+}
+
+// months[i] = i+1월 { target: 백만원, amt: 원(없으면 null), closed, rate: % }
+async function fetchSales() {
+  const { y, m } = billingMonth();
+  const [salesRes, targetRes] = await Promise.all([
+    sb.from('sales_monthly').select('yyyymm, amt, closed, synced_at').like('yyyymm', `${y}%`).order('yyyymm'),
+    sb.from('sales_targets').select('targets').eq('year', y).maybeSingle(),
+  ]);
+  if (salesRes.error) throw salesRes.error;
+  if (targetRes.error) throw targetRes.error;
+  const targets = (targetRes.data?.targets || []).map(Number);
+  const byMonth = new Map(salesRes.data.map((r) => [Number(r.yyyymm.slice(4)), r]));
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const r = byMonth.get(i + 1);
+    const target = targets[i] ?? null;
+    const amt = r ? Number(r.amt) : null;
+    return { m: i + 1, target, amt, closed: !!r?.closed, rate: amt !== null && target ? Math.round(amt / 1e4 / target) : null };
+  });
+  const closed = months.filter((x) => x.closed && x.target);
+  const sum = (key) => closed.reduce((s, x) => s + x[key], 0);
+  return {
+    y, cur: m, months, targets, hasTargets: targets.length === 12,
+    closedCount: closed.length,
+    lastClosed: closed.at(-1)?.m,
+    cum: closed.length ? Math.round(sum('amt') / 1e4 / sum('target')) : null,
+    avg: closed.length ? Math.round(sum('rate') / closed.length) : null,
+    synced: salesRes.data.reduce((a, r) => (r.synced_at > a ? r.synced_at : a), ''),
+  };
+}
+
+// 진행 중인 달의 경과일 (청구기간 첫날부터 오늘까지 / 전체 일수)
+function billingProgress(y, m) {
+  const start = new Date(y, m - 2, 26);
+  const end = new Date(y, m - 1, 25);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const total = Math.round((end - start) / DAY_MS) + 1;
+  return { elapsed: Math.min(total, Math.max(0, Math.round((today - start) / DAY_MS) + 1)), total };
+}
+
+const mil = (amt) => (amt / 1e6).toFixed(1);
+let salesData = null;
+
+async function loadSales() {
+  if (!sb || !user || !isMaster()) return;
+  try {
+    salesData = await fetchSales();
+    renderSales();
+  } catch (err) {
+    console.error('[sales]', err);
+    $('#salesSummary').textContent = `매출 자료를 불러오지 못했어요: ${err.message}`;
+  }
+}
+
+function salesChartSvg(d) {
+  const W = 360, H = 200, top = 22, bottom = 22, left = 6, slot = (W - left * 2) / 12;
+  const max = Math.max(1, ...d.months.map((x) => Math.max(x.target || 0, x.amt === null ? 0 : x.amt / 1e6))) * 1.1;
+  const y = (v) => top + (H - top - bottom) * (1 - v / max);
+  const parts = [];
+  d.months.forEach((x, i) => {
+    const cx = left + slot * i + slot / 2;
+    if (x.target) parts.push(`<rect class="bar-target" x="${cx - 11}" y="${y(x.target)}" width="10" height="${y(0) - y(x.target)}" rx="2"/>`);
+    if (x.amt !== null) {
+      const v = x.amt / 1e6;
+      parts.push(`<rect class="${x.closed ? 'bar-actual' : 'bar-open'}" x="${cx + 1}" y="${y(v)}" width="10" height="${y(0) - y(v)}" rx="2"/>`);
+      if (x.rate !== null) {
+        const yTop = Math.min(y(v), x.target ? y(x.target) : y(v)) - 5;
+        parts.push(`<text class="bar-rate${x.rate >= 100 ? ' ok' : ''}" x="${cx}" y="${yTop}">${x.rate}%</text>`);
+      }
+    }
+    parts.push(`<text class="bar-month${x.m === d.cur ? ' cur' : ''}" x="${cx}" y="${H - 6}">${x.m}월</text>`);
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${d.y}년 월별 목표 대비 실적">`
+    + `<line class="bar-base" x1="${left}" x2="${W - left}" y1="${y(0)}" y2="${y(0)}"/>${parts.join('')}</svg>`;
+}
+
+function renderSales() {
+  const d = salesData;
+  if (!d) return;
+  $('#salesChartTitle').textContent = `${d.y}년 월별 목표 대비 실적 (백만원)`;
+  $('#salesChart').innerHTML = salesChartSvg(d);
+  const cur = d.months[d.cur - 1];
+  const p = billingProgress(d.y, d.cur);
+  const box = (label, value, sub = '') => `<div><span>${label}</span><b>${value}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  $('#salesCur').innerHTML = `<p class="sales-cur-title">${d.cur}월 현재 (진행 중 · ${p.elapsed}/${p.total}일)</p><div class="sales-boxes">`
+    + box('당월 목표', cur.target ? `${cur.target}백만` : '-')
+    + box('누적 실적', cur.amt === null ? '-' : `${mil(cur.amt)}백만`)
+    + box('달성률', cur.rate === null ? '-' : `${cur.rate}%`, `기간 경과 ${Math.round((p.elapsed / p.total) * 100)}%`)
+    + '</div>';
+  $('#salesSummary').textContent = !d.hasTargets ? `${d.y}년 목표가 없어요. 아래 '목표 수정'에서 넣어 주세요.`
+    : d.closedCount ? `1~${d.lastClosed}월 누적 달성률 ${d.cum}% · 월평균 ${d.avg}%` : '마감된 달이 아직 없어요.';
+  const rows = d.months.filter((x) => x.amt !== null).map((x) => `<tr${x.closed ? '' : ' class="open"'}>`
+    + `<td>${x.m}월${x.closed ? '' : ' (진행 중)'}</td><td>${x.target ?? '-'}</td><td>${mil(x.amt)}</td>`
+    + `<td class="${x.rate >= 100 ? 'ok' : ''}">${x.rate === null ? '-' : `${x.rate}%`}</td></tr>`);
+  $('#salesTable').innerHTML = `<thead><tr><th>월</th><th>목표(백만)</th><th>실적(백만)</th><th>달성률</th></tr></thead><tbody>${rows.join('')}</tbody>`;
+  const ago = d.synced ? Math.round((Date.now() - new Date(d.synced)) / 60000) : null;
+  $('#salesSynced').textContent = ago === null ? '사내 미니PC에서 아직 자료가 올라오지 않았어요.'
+    : `마감된 달은 마감 금액, ${d.cur}월은 오늘까지 청구 금액 · ${ago < 60 ? `${ago}분` : `${Math.floor(ago / 60)}시간`} 전 갱신`;
+}
+
+const targetDialog = $('#targetDialog');
+$('#targetBtn').addEventListener('click', () => {
+  if (!salesData) return;
+  $('#targetDialogTitle').textContent = `${salesData.y}년 매출 목표 수정`;
+  $('#targetGrid').replaceChildren(...Array.from({ length: 12 }, (_, i) => {
+    const label = document.createElement('label');
+    label.textContent = `${i + 1}월`;
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.step = '0.1';
+    input.inputMode = 'decimal';
+    input.value = salesData.targets[i] ?? '';
+    label.append(input);
+    return label;
+  }));
+  targetDialog.showModal();
+});
+
+$('#targetForm').addEventListener('submit', async (e) => {
+  const values = [...$$('#targetGrid input')].map((i) => Number(i.value));
+  if (values.some((v) => !(v > 0))) {
+    e.preventDefault();
+    showToast('12달 목표를 모두 넣어 주세요 (백만원 단위).');
+    return;
+  }
+  const { error } = await sb.from('sales_targets')
+    .upsert({ year: salesData.y, targets: values, updated_at: new Date().toISOString() });
+  if (error) {
+    showToast(`목표를 저장하지 못했어요: ${error.message}`);
+    return;
+  }
+  showToast('목표를 저장했어요.');
+  loadSales();
+});
 
 // ================= 날짜계산기 (영업일 기준) =================
 // 공휴일(대체공휴일 포함, 토요일과 겹친 공휴일도 적음 → 택배 도착일 계산용).
@@ -1599,6 +2008,7 @@ async function checkAccess() {
       archive = [];
       journals = [];
       collabs = [];
+      tracks = [];
       renderAll();
     }
     saveCache();
@@ -1879,7 +2289,9 @@ function openReport(kind) {
   reportKind = kind;
   $('#reportTitle').textContent = kind === 'ppt' ? '주간보고 PPT' : '주간 엑셀 다운로드';
   $('#reportDesc').textContent = kind === 'ppt'
-    ? `선택한 주(월~일)의 업무 보고(활동 요약 · 거래처 이슈 · 업무 처리 · 추후 계획)를 ${isMaster() ? '영업사원별로 ' : ''}세로 A4 PPT로 받아요.`
+    ? (isMaster()
+      ? '월별 매출 목표 현황 → 영업사원별 실험트랙 → 영업사원별 주간보고(선택한 주 월~일) 순서로 세로 A4 PPT를 받아요.'
+      : '내 실험트랙 → 내 주간보고(선택한 주 월~일) 순서로 세로 A4 PPT를 받아요.')
     : '선택한 주(월~일)의 전체 영업사원 할일·영업일지·협업일지를 엑셀로 받아요.';
   const thisMonday = mondayOf(new Date());
   const options = [];
@@ -2090,7 +2502,90 @@ function pptPage(pptx, title) {
       });
       y += h + 0.05;
     },
+    // 그림·차트 등 높이 h 인치를 차지하는 내용: draw(slide, x, y, w)
+    block(h, draw) {
+      if (y + h > BOTTOM) newSlide(true);
+      draw(slide, X, y, W);
+      y += h + 0.1;
+    },
+    // 표: rows = [{ cells: [...], bold }]. 자리가 모자라면 다음 장에 머리줄과 함께 이어 그림
+    table(head, rows, colW, align = []) {
+      const RH = 0.3;
+      const cell = (text, i, opt = {}) => ({ text: String(text), options: { align: align[i] || 'left', ...opt } });
+      const headRow = head.map((t, i) => cell(t, i, { bold: true, color: 'FFFFFF', fill: { color: PPT.accent } }));
+      let rest = rows;
+      while (rest.length) {
+        if (Math.floor((BOTTOM - y) / RH) - 1 < 2) newSlide(true);
+        const fit = Math.floor((BOTTOM - y) / RH) - 1;
+        const chunk = rest.slice(0, fit);
+        rest = rest.slice(fit);
+        slide.addTable([headRow, ...chunk.map((r) => r.cells.map((t, i) => cell(t, i, r.bold ? { bold: true, fill: { color: 'F3F4F6' } } : {})))], {
+          x: X, y, w: W, colW, rowH: RH, fontSize: 9.5, color: PPT.text, valign: 'middle',
+          border: { type: 'solid', pt: 0.5, color: 'D1D5DB' },
+        });
+        y += (chunk.length + 1) * RH + 0.12;
+      }
+    },
   };
+}
+
+// 월별 매출 목표 달성현황 (마스터 PPT 첫 장)
+function pptSales(pptx, d) {
+  const page = pptPage(pptx, `■ ${d.y}년 월별 매출 목표 달성 현황`);
+  page.item(`집계 기준: 전월 26일~당월 25일 · ${ymd(new Date())} 기준 (마감된 달은 마감 금액, ${d.cur}월은 오늘까지 청구 금액)`, PPT.muted);
+  const labels = d.months.map((x) => `${x.m}월`);
+  page.block(3.4, (slide, x, y, w) => slide.addChart(pptx.ChartType.bar, [
+    { name: '목표(백만원)', labels, values: d.months.map((m) => m.target || 0) },
+    { name: '실적(백만원)', labels, values: d.months.map((m) => (m.amt === null ? 0 : Number(mil(m.amt)))) },
+  ], {
+    x, y, w, h: 3.4, barDir: 'col', barGrouping: 'clustered', chartColors: ['D1D5DB', PPT.accent],
+    showLegend: true, legendPos: 't', legendFontSize: 9, legendFontFace: PPT.font,
+    catAxisLabelFontSize: 9, catAxisLabelFontFace: PPT.font, valAxisLabelFontSize: 8, valAxisMinVal: 0,
+    valGridLine: { color: 'E5E7EB', size: 0.5 },
+  }));
+  const cur = d.months[d.cur - 1];
+  const prog = billingProgress(d.y, d.cur);
+  page.heading(`${d.cur}월 현재 (진행 중)`);
+  page.item(`당월 목표 ${cur.target ?? '-'}백만원 · 누적 실적 ${cur.amt === null ? '-' : `${mil(cur.amt)}백만원`} · 달성률 ${cur.rate === null ? '-' : `${cur.rate}%`}`);
+  page.item(`기간 경과 ${prog.elapsed}/${prog.total}일 (${Math.round((prog.elapsed / prog.total) * 100)}%)`, PPT.muted);
+  page.heading('월별 실적');
+  const rows = d.months.filter((x) => x.amt !== null).map((x) => ({
+    cells: [`${x.m}월${x.closed ? '' : ' (진행 중)'}`, x.target ?? '-', mil(x.amt), x.rate === null ? '-' : `${x.rate}%`],
+  }));
+  if (d.closedCount) {
+    const closed = d.months.filter((x) => x.closed && x.target);
+    rows.push({
+      cells: [`1~${d.lastClosed}월 누적`, closed.reduce((s, x) => s + x.target, 0), mil(closed.reduce((s, x) => s + x.amt, 0)), `${d.cum}%`],
+      bold: true,
+    });
+  }
+  if (rows.length) page.table(['월', '목표(백만원)', '실적(백만원)', '달성률'], rows, [2.27, 1.6, 1.6, 1.6], ['left', 'right', 'right', 'right']);
+  else page.item('사내 미니PC에서 아직 매출 자료가 올라오지 않았어요.', PPT.muted);
+}
+
+// 실험트랙: 진행 중인 트랙마다 목적·진행 방법·치과 표
+function pptTracks(pptx, name, list) {
+  const page = pptPage(pptx, `■ 실험트랙 – ${name}`);
+  if (!list.length) {
+    page.item('진행 중인 실험트랙이 없어요.', PPT.muted);
+    return;
+  }
+  list.forEach((t, i) => {
+    page.heading(`트랙 ${i + 1}. ${t.title || '(이름 없음)'}`);
+    page.item(`목적: ${t.purpose || '-'}`);
+    page.item(`진행 방법: ${t.plan || '-'}`);
+    if (!t.clinics.length) {
+      page.item('등록한 치과가 없어요.', PPT.muted);
+      return;
+    }
+    const sum = trackSum(t.clinics);
+    const rows = t.clinics.map((c) => ({
+      cells: [clip(tcName(c), 20), c.kind || '-', c.status + (tcPeriod(c) ? `(${tcPeriod(c)})` : ''), c.dx || 0, c.mnft || 0],
+    }));
+    rows.push({ cells: [`합계 (${t.clinics.length}곳)`, '', '', sum.dx, sum.mnft], bold: true });
+    page.table(['지역_치과명', '유형', '상태(기간)', '진단', '제작'], rows, [2.7, 0.8, 2.07, 0.75, 0.75],
+      ['left', 'center', 'left', 'center', 'center']);
+  });
 }
 
 function pptReport(pptx, name, period, p, today) {
@@ -2148,13 +2643,18 @@ function pptReport(pptx, name, period, p, today) {
   });
 }
 
+// 마스터: 월별 매출 → 영업사원별 실험트랙 → 영업사원별 주간보고 / 영업사원: 본인 실험트랙 → 본인 주간보고
 async function buildWeeklyPpt(mondayStr) {
-  const [PptxGenJS, week, openTasks] = await Promise.all([
+  const master = isMaster();
+  const [PptxGenJS, week, openTasks, trackRows, sales] = await Promise.all([
     loadPptx(),
     fetchWeek(mondayStr),
     // 추후 계획: 지금 남아 있는 할일 (아카이브 제외)
     selectAll(() => sb.from('tasks').select('*').is('archived_at', null).eq('col', 'todo')
       .order('created_at').order('id')),
+    // 진행 중인 실험트랙 (마스터는 서버 규칙상 전원 것)
+    selectAll(() => sb.from('tracks').select('*').eq('status', '진행중').order('created_at').order('id')),
+    master ? fetchSales() : null,
   ]);
   const { start, weekTasks, weekJournals, who, inWeek } = week;
   const sun = new Date(start);
@@ -2169,7 +2669,14 @@ async function buildWeeklyPpt(mondayStr) {
   weekJournals.forEach((j) => of(j.user_id).journals.push(j));
   // 아직 안 끝낸 할일 전부 (치과명 있는 일 포함, 지난 날짜는 '지연')
   openTasks.forEach((t) => of(t.user_id).plan.push(t));
-  if (!people.size) throw new Error('이 주에는 보고할 내용이 없어요.');
+  if (!master) of(user.id); // 영업사원은 내용이 없어도 본인 보고서를 만듦
+  const trackBy = new Map();
+  trackRows.map(trackFromRow).forEach((t, i) => {
+    const id = trackRows[i].user_id;
+    if (!trackBy.has(id)) trackBy.set(id, []);
+    trackBy.get(id).push(t);
+  });
+  if (!people.size && !trackBy.size && !sales) throw new Error('이 주에는 보고할 내용이 없어요.');
 
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: 'A4_PORTRAIT', width: 8.27, height: 11.69 });
@@ -2177,11 +2684,15 @@ async function buildWeeklyPpt(mondayStr) {
   pptx.theme = { headFontFace: PPT.font, bodyFontFace: PPT.font };
   const period = `${mdShort(start)}~${mdShort(sun)}`;
   const today = ymd(new Date());
-  [...people].sort(([a], [b]) => who(a).localeCompare(who(b), 'ko')).forEach(([id, p]) => {
+  const byName = ([a], [b]) => who(a).localeCompare(who(b), 'ko');
+  if (sales) pptSales(pptx, sales);
+  if (master) [...trackBy].sort(byName).forEach(([id, list]) => pptTracks(pptx, who(id), list));
+  else pptTracks(pptx, who(user.id), trackBy.get(user.id) || []);
+  [...people].sort(byName).forEach(([id, p]) => {
     p.plan.sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
     pptReport(pptx, who(id), period, p, today);
   });
-  const suffix = isMaster() ? '' : `_${profileName || '내보고'}`;
+  const suffix = master ? '' : `_${profileName || '내보고'}`;
   await pptx.writeFile({ fileName: `주간보고${suffix}_${mondayStr}.pptx` });
   return { people: people.size, slides: pptx.slides.length };
 }
@@ -2218,12 +2729,13 @@ const fetchAll = (table, columns = '*', orderBy = 'created_at', key = 'id') =>
   selectAll(() => sb.from(table).select(columns).order(orderBy).order(key));
 
 async function buildFullBackup() {
-  const [XLSX, profiles, taskRows, journalRows, collabRows, boardRows] = await Promise.all([
+  const [XLSX, profiles, taskRows, journalRows, collabRows, trackRows, boardRows] = await Promise.all([
     loadXlsx(),
     fetchAll('profiles', 'id, name, email, status, created_at'),
     fetchAll('tasks'),
     fetchAll('journals'),
     fetchAll('collabs'),
+    fetchAll('tracks'),
     fetchAll('board', 'kind, body, data, updated_at', 'kind', 'kind'),
   ]);
   const names = new Map(profiles.map((p) => [p.id, p.name || p.email || '']));
@@ -2278,6 +2790,18 @@ async function buildFullBackup() {
     사용자ID: c.user_id,
   })).sort((a, b) => byName(a, b) || a.날짜.localeCompare(b.날짜));
 
+  // 실험트랙: 치과 한 곳당 한 줄 (치과가 없으면 트랙만 한 줄)
+  const trackSheet = trackRows.flatMap((r) => {
+    const t = trackFromRow(r);
+    const base = { 영업사원: who(r.user_id), 트랙: t.title, 트랙상태: t.status, 목적: t.purpose, 진행방법: t.plan };
+    const tail = { 작성일시: fmtDateTime(r.created_at), ID: r.id, 사용자ID: r.user_id };
+    if (!t.clinics.length) return [{ ...base, ...tail }];
+    return t.clinics.map((c) => ({
+      ...base, 지역: c.region || '', 치과명: c.clinic || '', 유형: c.kind || '', 치과상태: c.status || '',
+      시작일: c.start || '', 종료일: c.end || '', 진단: c.dx || 0, 제작: c.mnft || 0, ...tail,
+    }));
+  }).sort(byName);
+
   const boardSheet = boardRows.map((r) => {
     const d = r.data || {};
     const discounts = PROMO_PKGS.filter(([k]) => d.discounts?.[k] > 0)
@@ -2299,6 +2823,7 @@ async function buildFullBackup() {
     { 항목: '할일', 값: `${taskSheet.length}건 (아카이브 포함)` },
     { 항목: '영업일지', 값: `${journalSheet.length}건` },
     { 항목: '협업일지', 값: `${collabSheet.length}건` },
+    { 항목: '실험트랙', 값: `${trackRows.length}개` },
     { 항목: '공지·프로모션', 값: `${boardSheet.length}건` },
     { 항목: '참고', 값: 'ID·사용자ID 열은 복원할 때 쓰이니 지우지 마세요.' },
   ];
@@ -2320,6 +2845,9 @@ async function buildFullBackup() {
   XLSX.utils.book_append_sheet(wb, sheet(collabSheet,
     ['영업사원', '날짜', '요일', '협력자', '치과명', '협력내용', '결과', '작성일시', 'ID', '사용자ID'],
     [12, 12, 6, 16, 20, 45, 45, 17, 16, 38]), '협업일지');
+  XLSX.utils.book_append_sheet(wb, sheet(trackSheet,
+    ['영업사원', '트랙', '트랙상태', '목적', '진행방법', '지역', '치과명', '유형', '치과상태', '시작일', '종료일', '진단', '제작', '작성일시', 'ID', '사용자ID'],
+    [12, 24, 8, 36, 36, 10, 20, 8, 8, 12, 12, 6, 6, 17, 16, 38]), '실험트랙');
   XLSX.utils.book_append_sheet(wb, sheet(boardSheet, ['종류', '내용', '할인', '종료일', '수정일시'], [10, 60, 40, 12, 17]), '공지·프로모션');
 
   XLSX.writeFile(wb, `할일보드_전체백업_${ymd(now)}.xlsx`);
@@ -2452,6 +2980,7 @@ function setUser(u) {
   archive = [];
   journals = [];
   collabs = [];
+  tracks = [];
   notes = { notice: '', promo: '' };
   promo = { discounts: {}, until: '' };
   profileName = '';
@@ -2481,6 +3010,8 @@ function setUser(u) {
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'journals' }, () => schedulePull())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'collabs', filter: mine }, () => schedulePull())
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'collabs' }, () => schedulePull())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tracks', filter: mine }, () => schedulePull())
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tracks' }, () => schedulePull())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'board' }, () => schedulePull())
     // 승인 상태가 바뀌면 바로 반영 (마스터는 새 가입 요청 알림)
     .on('postgres_changes', isMaster()
@@ -2490,6 +3021,7 @@ function setUser(u) {
     .subscribe();
   if (accessOk) pull();
   checkAccess();
+  if (document.body.dataset.view === 'alim') loadAlim();
 }
 
 // ================= 시작 =================

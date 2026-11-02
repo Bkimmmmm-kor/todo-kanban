@@ -510,3 +510,74 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .cal-day { min-height: 90px; padding: 4px; }
   .cal-item { font-size: .8rem; }
 }
+
+/* v26 실험트랙 */
+.track-hint { padding: 0 0 10px; text-align: left; }
+.tag.track-on { background: #dcfce7; color: #166534; }
+.track-done { opacity: .6; }
+.track-total { margin: 8px 0 4px; font-size: .9rem; font-weight: 700; color: var(--accent); }
+.tc-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.tc-row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
+  padding: 8px 0; border-top: 1px solid var(--border);
+}
+.tc-row.tc-done { opacity: .55; }
+.tc-main { min-width: 0; flex: 1 1 140px; }
+.tc-main b { display: block; overflow-wrap: anywhere; }
+.tc-main span { font-size: .8rem; color: var(--muted); }
+.tc-counts { display: flex; gap: 10px; }
+.tc-count { display: inline-flex; align-items: center; gap: 4px; font-size: .8rem; color: var(--muted); }
+.tc-count b { min-width: 22px; text-align: center; font-size: 1rem; color: var(--text); }
+.tc-count button {
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-size: 1rem; line-height: 1; padding: 0;
+}
+.tc-add {
+  width: 100%; margin-top: 6px; padding: 9px; border: 1px dashed var(--border); border-radius: 10px;
+  background: none; color: var(--accent); font: inherit; font-size: .9rem;
+}
+
+/* v26 월별 매출 목표 */
+.sales-cur, .sales-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 12px;
+}
+.sales-cur-title, .sales-card-title { margin: 0 0 10px; font-weight: 700; }
+.sales-boxes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sales-boxes div { background: var(--bg); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.sales-boxes span { display: block; font-size: .75rem; color: var(--muted); }
+.sales-boxes b { display: block; font-size: 1.15rem; color: var(--accent); }
+.sales-boxes small { display: block; font-size: .7rem; color: var(--muted); }
+#salesChart svg { display: block; width: 100%; height: auto; }
+.bar-target { fill: #d1d5db; }
+.bar-actual { fill: var(--accent); }
+.bar-open { fill: var(--accent); opacity: .45; }
+.bar-base { stroke: var(--border); }
+.bar-rate { font-size: 8px; text-anchor: middle; fill: var(--muted); font-weight: 700; }
+.bar-rate.ok { fill: #16a34a; }
+.bar-month { font-size: 9px; text-anchor: middle; fill: var(--muted); }
+.bar-month.cur { fill: var(--accent); font-weight: 700; }
+.sales-legend { margin: 6px 0 0; font-size: .75rem; color: var(--muted); }
+.sales-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: -1px; }
+.sales-legend i:first-child { margin-left: 0; }
+.lg-target { background: #d1d5db; }
+.lg-actual { background: var(--accent); }
+.lg-open { background: var(--accent); opacity: .45; }
+.sales-summary { margin: 0 0 10px; font-weight: 700; }
+.sales-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: .9rem; background: var(--surface); }
+.sales-table th, .sales-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: right; }
+.sales-table th:first-child, .sales-table td:first-child { text-align: left; }
+.sales-table th { font-size: .78rem; color: var(--muted); font-weight: 600; }
+.sales-table tr.open td { color: var(--accent); }
+.sales-table td.ok { color: #16a34a; font-weight: 700; }
+.secondary-btn {
+  width: 100%; height: 46px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 600;
+}
+#salesSynced { padding: 10px 0 0; }
+.target-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.target-grid label { font-size: .85rem; color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .tag.track-on { background: #14532d; color: #dcfce7; }
+  .bar-target, .lg-target { fill: #4b5563; background: #4b5563; }
+}
