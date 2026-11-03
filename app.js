@@ -49,6 +49,8 @@ let activeCol = 'todo';
 let todoMode = 'kanban'; // 할일 보기: kanban / cal(달력)
 let calMonth = null; // 달력에 보이는 달 (1일)
 let calSel = null; // 달력에서 고른 날 'YYYY-MM-DD'
+let journalMode = 'list'; // 영업일지 보기: list / revisit(재방리스트) / map(영업지도)
+let regionMap = {}; // 일지 지역 이름 → 지도 시·구 (공용, 직접 고른 것)
 
 const isMaster = () => MASTER_EMAILS.includes(user?.email?.toLowerCase());
 
@@ -246,7 +248,7 @@ function saveCache() {
   if (!user) return;
   try {
     localStorage.setItem(cacheKey(), JSON.stringify({
-      tasks, archive, journals, collabs, tracks, notes, promo, profileName, priceData: priceTable, approved: accessOk,
+      tasks, archive, journals, collabs, tracks, notes, promo, regionMap, profileName, priceData: priceTable, approved: accessOk,
       synced: Object.fromEntries(Object.entries(stores).map(([k, s]) => [k, [...s.synced]])),
     }));
   } catch { /* 저장 공간 부족 등: 서버 저장은 계속됨 */ }
@@ -262,6 +264,7 @@ function loadCache() {
     journals = (data.journals || []).map((j) => ('type' in j ? j : { ...j, type: clinicType({ is_ortho: j.ortho }) }));
     collabs = data.collabs || [];
     tracks = data.tracks || [];
+    regionMap = data.regionMap || {};
     notes = data.notes || notes;
     promo = data.promo || promo;
     dropDoing();
@@ -348,7 +351,7 @@ async function pull() {
   try {
     if (!(await queuePush())) return;
     const uid = user.id;
-    const [taskData, journalData, collabData, trackData, boardRes, priceRes] = await Promise.all([
+    const [taskData, journalData, collabData, trackData, boardRes, priceRes, regionRes] = await Promise.all([
       // 마스터는 모든 사람 것을 볼 수 있으므로 내 것만 받음
       selectAll(() => sb.from('tasks').select('*').eq('user_id', uid).order('id')),
       selectAll(() => sb.from('journals').select('*').eq('user_id', uid).order('id')),
@@ -356,6 +359,7 @@ async function pull() {
       selectAll(() => sb.from('tracks').select('*').eq('user_id', uid).order('id')),
       sb.from('board').select('kind, body, data'),
       sb.from('price_table').select('data').maybeSingle(),
+      sb.from('region_map').select('region, area'),
     ]);
     if (boardRes.error) throw boardRes.error;
     if (user?.id !== uid) return; // 받는 사이 로그아웃
@@ -374,6 +378,8 @@ async function pull() {
     // 수가표는 없어도 나머지 동기화는 계속
     if (priceRes.error) console.error('[sync] price', priceRes.error);
     else setPriceTable(priceRes.data?.data);
+    if (regionRes.error) console.error('[sync] region_map', regionRes.error);
+    else regionMap = Object.fromEntries(regionRes.data.map((r) => [r.region, r.area]));
     if (dropDoing()) queuePush();
     saveCache();
     renderAll();
@@ -733,7 +739,7 @@ function cardEl(task) {
     if (task.clinic) tags.append(tagEl(`🦷 ${task.clinic}`));
     if (task.due) {
       const { text, diff } = dueLabel(task.due);
-      const urgent = task.col !== 'done' && (diff < 0 ? 'due-over' : diff <= 1 ? 'due-soon' : '');
+      const urgent = task.col !== 'done' && (diff <= 0 ? 'due-over' : diff === 1 ? 'due-soon' : '');
       tags.append(tagEl(`📅 ${text}`, urgent || ''));
     }
     li.append(tags);
@@ -947,6 +953,8 @@ function journalHead(title) {
 }
 
 function renderJournals() {
+  if (journalMode === 'revisit') renderRevisit();
+  if (journalMode === 'map') renderSalesMap();
   renderDayList('#journalList', journals, (li, j) => {
     const head = journalHead(j.clinic || '(치과명 없음)');
     if (j.region) head.append(tagEl(`📍 ${j.region}`));
@@ -962,6 +970,274 @@ function renderJournals() {
     }
   });
 }
+
+// ---------- 영업일지 보기: 영업일지 / 재방리스트 / 영업지도 ----------
+function setJournalMode(mode) {
+  journalMode = ['revisit', 'map'].includes(mode) ? mode : 'list';
+  $$('#journalMode button').forEach((b) => b.classList.toggle('on', b.dataset.mode === journalMode));
+  $$('[data-jmode]').forEach((el) => (el.hidden = el.dataset.jmode !== journalMode));
+  renderJournals();
+  try {
+    localStorage.setItem('journal-mode', journalMode);
+  } catch { /* 무시 */ }
+}
+$$('#journalMode button').forEach((b) => b.addEventListener('click', () => setJournalMode(b.dataset.mode)));
+
+const daysAgo = (day) => Math.round((parseYmd(ymd(new Date())) - parseYmd(day)) / DAY_MS);
+// 올해가 아니면 연도도: 2025/9/1
+const dayText = (day) => (day.slice(0, 4) === ymd(new Date()).slice(0, 4) ? '' : `${day.slice(0, 4)}/`) + mdShort(parseYmd(day));
+const agoText = (day) => {
+  const n = daysAgo(day);
+  return n <= 0 ? '오늘' : `${n}일 전`;
+};
+// 최근 일지가 먼저: 방문일, 같은 날이면 작성 순서
+const newerFirst = (a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0);
+
+// 재방리스트: 치과마다 가장 최근 일지의 감도가 상·중이면 넣고, 마지막 방문이 오래된 치과가 위로
+function renderRevisit() {
+  const byClinic = new Map();
+  for (const j of journals) {
+    const name = j.clinic.trim();
+    if (!name) continue;
+    if (!byClinic.has(name)) byClinic.set(name, []);
+    byClinic.get(name).push(j);
+  }
+  const rows = [...byClinic.values()]
+    .map((list) => ({ last: [...list].sort(newerFirst)[0], count: list.length }))
+    .filter(({ last }) => last.temp === '상' || last.temp === '중')
+    .sort((a, b) => a.last.date.localeCompare(b.last.date));
+  $('#revisitList').replaceChildren(...rows.map(({ last, count }) => {
+    const li = document.createElement('li');
+    li.className = 'journal-item';
+    li.dataset.id = last.id;
+    const head = journalHead(last.clinic.trim());
+    if (last.region) head.append(tagEl(`📍 ${last.region}`));
+    head.append(tagEl(`감도 ${last.temp}`, `temp-${last.temp}`));
+    const meta = document.createElement('p');
+    meta.className = 'revisit-meta';
+    const when = document.createElement('b');
+    when.textContent = `${dayText(last.date)} (${agoText(last.date)})`;
+    when.classList.toggle('old', daysAgo(last.date) >= 30);
+    meta.append('마지막 방문 ', when, ` · 방문 ${count}회`);
+    li.append(head, meta);
+    if (last.content) {
+      const p = document.createElement('p');
+      p.className = 'j-content c-line';
+      p.textContent = last.content;
+      li.append(p);
+    }
+    return li;
+  }));
+}
+
+// 재방리스트에서 누르면 그 치과로 새 일지 작성
+$('#revisitList').addEventListener('click', (e) => {
+  const item = e.target.closest('.journal-item');
+  const last = item && journals.find((x) => x.id === item.dataset.id);
+  if (last) openJournal(null, '일반영업', { region: last.region, clinic: last.clinic.trim(), type: last.type });
+});
+
+// ---------- 영업지도 ----------
+let mapData = null; // map/capital.json (수도권 시·구 경계 + 동 이름 사전)
+let mapLoading = null;
+let mapSel = null; // 누른 시·구 id
+let mapZoom = 'all';
+
+function loadMapData() {
+  mapLoading ||= fetch('map/capital.json')
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+    .then((d) => {
+      mapData = d;
+      // 이름으로 찾기: '광명시'·'광명', 일반구 '분당구'·'분당'
+      mapData.names = [];
+      for (const a of d.areas) {
+        for (const n of [a.name, ...a.gu]) {
+          mapData.names.push([n, a.id]);
+          const short = n.replace(/(시|군|구)$/, '');
+          if (short.length >= 2) mapData.names.push([short, a.id]);
+        }
+      }
+      if (journalMode === 'map') renderSalesMap();
+    })
+    .catch((err) => {
+      console.error('[map]', err);
+      mapLoading = null;
+      $('#mapSummary').textContent = '지도를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.';
+    });
+  return mapLoading;
+}
+
+// 일지 '지역' → 시·구 id. 직접 고른 것 → 시·구 이름 → 동 이름 순. 못 찾거나 후보가 여럿이면 null
+function regionArea(text) {
+  const key = (text || '').trim();
+  if (!key) return null;
+  if (regionMap[key]) return regionMap[key];
+  const byName = new Set(mapData.names.filter(([n]) => key.includes(n)).map(([, id]) => id));
+  if (byName.size === 1) return [...byName][0];
+  if (byName.size > 1) return null;
+  for (const token of key.split(/[\s_·,()/]+/)) {
+    for (let len = token.length; len >= 2; len--) {
+      const hit = mapData.dong[token.slice(0, len)];
+      if (hit) return hit.length === 1 ? hit[0] : null;
+    }
+  }
+  return null;
+}
+
+// 마지막 방문일 → 색: 3개월 안 파랑 / 3개월+ 초록 / 6개월+ 노랑 / 12개월+·없음 빨강
+function mapColor(last) {
+  if (!last) return 'm-red';
+  const before = (months) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - months);
+    return ymd(d);
+  };
+  if (last > before(3)) return 'm-blue';
+  if (last > before(6)) return 'm-green';
+  if (last > before(12)) return 'm-yellow';
+  return 'm-red';
+}
+
+const svgEl = (tag, attrs = {}) => {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+};
+const areaLabel = (a) => (a.name.length > 2 ? a.name.replace(/(시|군|구)$/, '') : a.name);
+
+function renderSalesMap() {
+  if (!mapData) {
+    $('#mapSummary').textContent = '지도를 불러오는 중…';
+    loadMapData();
+    return;
+  }
+  // 시·구별 방문 일지 (최근순)
+  const visits = new Map();
+  const unmatched = new Map(); // 지역 이름 → 일지 수
+  for (const j of [...journals].sort(newerFirst)) {
+    if (!j.region.trim()) continue;
+    const id = regionArea(j.region);
+    if (!id) {
+      unmatched.set(j.region.trim(), (unmatched.get(j.region.trim()) || 0) + 1);
+      continue;
+    }
+    if (!visits.has(id)) visits.set(id, []);
+    visits.get(id).push(j);
+  }
+  const svg = $('#mapSvg');
+  const seoul = mapZoom === 'seoul';
+  const shown = mapData.areas.filter((a) => !seoul || a.id.startsWith('서울'));
+  const paths = shown.map((a) => {
+    const last = visits.get(a.id)?.[0]?.date;
+    const p = svgEl('path', { d: a.d, class: `${mapColor(last)}${a.id === mapSel ? ' sel' : ''}`, 'data-id': a.id });
+    const title = svgEl('title');
+    title.textContent = `${a.id} · ${last ? `마지막 방문 ${dayText(last)}` : '방문 기록 없음'}`;
+    p.append(title);
+    return p;
+  });
+  const sel = paths.find((p) => p.dataset.id === mapSel);
+  if (sel) paths.push(paths.splice(paths.indexOf(sel), 1)[0]); // 굵은 테두리가 가려지지 않게 맨 위로
+  // 이름: 수도권 보기는 경기·인천만(서울은 너무 좁음), 서울 보기는 서울 구
+  const labels = shown.filter((a) => seoul || !a.id.startsWith('서울')).map((a) => {
+    const t = svgEl('text', { x: a.x, y: a.y });
+    t.textContent = areaLabel(a);
+    return t;
+  });
+  svg.replaceChildren(...paths, ...labels);
+  const box = seoul ? mapData.seoul : [0, 0, mapData.w, mapData.h];
+  svg.setAttribute('viewBox', box.join(' '));
+  labels.forEach((t) => t.setAttribute('style', `font-size:${(box[2] / (seoul ? 40 : 48)).toFixed(1)}px`));
+  $$('#mapZoom button').forEach((b) => b.classList.toggle('on', b.dataset.zoom === mapZoom));
+  const total = mapData.areas.length;
+  $('#mapSummary').textContent = `방문한 시·구 ${visits.size} / ${total}`;
+  renderMapDetail(visits);
+  renderUnmatched(unmatched);
+}
+
+function renderMapDetail(visits) {
+  const box = $('#mapDetail');
+  const area = mapData.areas.find((a) => a.id === mapSel);
+  if (!area) {
+    box.innerHTML = '<p class="muted map-sec"><small>지도에서 시·구를 누르면 방문한 치과가 나와요.</small></p>';
+    return;
+  }
+  const list = visits.get(area.id) || [];
+  const h = document.createElement('p');
+  h.className = 'map-sec';
+  h.textContent = area.id;
+  const small = document.createElement('small');
+  small.textContent = list.length ? `마지막 방문 ${dayText(list[0].date)} (${agoText(list[0].date)}) · ${list.length}건` : '방문 기록 없음';
+  h.append(small);
+  const ul = document.createElement('ul');
+  ul.className = 'map-visits';
+  ul.append(...list.slice(0, 30).map((j) => {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = `${j.clinic || '(치과명 없음)'} · ${j.region}`;
+    const when = document.createElement('span');
+    when.textContent = `${dayText(j.date)}${j.visit ? ` ${j.visit}` : ''}`;
+    li.append(name, when);
+    return li;
+  }));
+  box.replaceChildren(h, ul);
+}
+
+// 자동으로 못 찾은 지역 이름: 한 번 고르면 모두가 같이 씀(region_map)
+function renderUnmatched(unmatched) {
+  const box = $('#mapUnmatched');
+  if (!unmatched.size) {
+    box.replaceChildren();
+    return;
+  }
+  const h = document.createElement('p');
+  h.className = 'map-sec';
+  h.textContent = `연결 안 된 지역 ${unmatched.size}개`;
+  const small = document.createElement('small');
+  small.textContent = '어느 시·구인지 한 번만 골라 주세요';
+  h.append(small);
+  const options = [...mapData.areas].sort((a, b) => a.id.localeCompare(b.id, 'ko'));
+  const rows = [...unmatched].map(([name, n]) => {
+    const row = document.createElement('div');
+    row.className = 'unmatched-row';
+    const b = document.createElement('b');
+    b.textContent = `${name} (${n})`;
+    const select = document.createElement('select');
+    select.dataset.region = name;
+    select.append(new Option('시·구 고르기', ''), ...options.map((a) => new Option(a.id, a.id)));
+    row.append(b, select);
+    return row;
+  });
+  box.replaceChildren(h, ...rows);
+}
+
+$('#mapUnmatched').addEventListener('change', async (e) => {
+  const { region } = e.target.dataset;
+  const area = e.target.value;
+  if (!region || !area) return;
+  regionMap[region] = area;
+  saveCache();
+  renderSalesMap();
+  showToast(`'${region}' → ${area}`);
+  if (!sb || !user) return;
+  const { error } = await sb.from('region_map').upsert({ region, area });
+  if (error) {
+    console.error('[region_map]', error);
+    showToast('이 기기에만 저장했어요. 서버 저장은 나중에 다시 골라 주세요.');
+  }
+});
+
+$('#mapSvg').addEventListener('click', (e) => {
+  const id = e.target.closest('path')?.dataset.id;
+  if (!id) return;
+  mapSel = mapSel === id ? null : id;
+  renderSalesMap();
+});
+$('#mapZoom').addEventListener('click', (e) => {
+  const zoom = e.target.closest('button')?.dataset.zoom;
+  if (!zoom || zoom === mapZoom) return;
+  mapZoom = zoom;
+  renderSalesMap();
+});
 
 // 선택 버튼 묶음(교정과, 감도, 등급): 다시 누르면 선택 해제
 function segValue(seg) {
@@ -985,15 +1261,17 @@ let editJournalId = null;
 bindSeg($('#jType'));
 bindSeg($('#jTemp'));
 
-function openJournal(id = null, visit = '') {
+// prefill: 재방리스트에서 새로 쓸 때 지역·치과명·구분
+function openJournal(id = null, visit = '', prefill = {}) {
   const j = journals.find((x) => x.id === id);
   editJournalId = j ? j.id : null;
   $('#journalDialogTitle').textContent = j ? '영업일지 수정' : '영업일지 작성';
   setSeg($('#jVisit'), j ? j.visit || '' : visit);
   $('#jDate').value = j ? j.date : ymd(new Date());
-  $('#jRegion').value = j?.region || '';
-  $('#jClinic').value = j?.clinic || '';
-  setSeg($('#jType'), j?.type || '');
+  const src = j || prefill;
+  $('#jRegion').value = src.region || '';
+  $('#jClinic').value = src.clinic || '';
+  setSeg($('#jType'), src.type || '');
   setSeg($('#jTemp'), j?.temp || '');
   $('#jContent').value = j?.content || '';
   $('#jDeleteBtn').hidden = !j;
@@ -3029,6 +3307,7 @@ function setUser(u) {
   journals = [];
   collabs = [];
   tracks = [];
+  regionMap = {};
   notes = { notice: '', promo: '' };
   promo = { discounts: {}, until: '' };
   profileName = '';
@@ -3078,10 +3357,12 @@ let lastView = 'todo';
 try {
   lastView = localStorage.getItem('last-view') || 'todo';
   todoMode = localStorage.getItem('todo-mode') || 'kanban';
+  journalMode = localStorage.getItem('journal-mode') || 'list';
 } catch { /* 무시 */ }
 calSel = ymd(new Date());
 calMonth = parseYmd(calSel.slice(0, 8) + '01');
 setTodoMode(todoMode);
+setJournalMode(journalMode);
 setView(lastView);
 syncCalcInputs();
 renderAll();

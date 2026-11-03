@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=27">
+  <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -113,9 +113,37 @@
 
   <!-- ========== 영업일지 ========== -->
   <section class="view" data-view="journal" hidden>
-    <main class="scroll">
+    <div class="segmented todo-mode" id="journalMode">
+      <button type="button" data-mode="list">📝 영업일지</button>
+      <button type="button" data-mode="revisit">🔁 재방리스트</button>
+      <button type="button" data-mode="map">🗺️ 영업지도</button>
+    </div>
+    <main class="scroll" data-jmode="list">
       <ul id="journalList" class="journal-list"></ul>
       <p class="empty journal-empty">작성한 영업일지가 없어요.<br>아래 버튼으로 오늘 방문한 치과를 기록해 보세요.</p>
+    </main>
+    <main class="scroll" data-jmode="revisit" hidden>
+      <p class="muted revisit-hint">가장 최근 일지의 감도가 상·중인 치과 · 마지막 방문이 오래된 순서</p>
+      <ul id="revisitList" class="journal-list"></ul>
+      <p class="empty journal-empty">감도 상·중인 치과가 없어요.</p>
+    </main>
+    <main class="scroll" data-jmode="map" hidden>
+      <div class="map-tools">
+        <div class="segmented map-zoom" id="mapZoom">
+          <button type="button" data-zoom="all" class="on">수도권</button>
+          <button type="button" data-zoom="seoul">서울</button>
+        </div>
+        <p class="muted" id="mapSummary"></p>
+      </div>
+      <div class="map-box"><svg id="mapSvg" role="img" aria-label="영업지도"></svg></div>
+      <div class="map-legend">
+        <span><i class="m-blue"></i>3개월 안</span>
+        <span><i class="m-green"></i>3개월+</span>
+        <span><i class="m-yellow"></i>6개월+</span>
+        <span><i class="m-red"></i>12개월+·없음</span>
+      </div>
+      <div id="mapDetail"></div>
+      <div id="mapUnmatched"></div>
     </main>
     <div class="action-bar">
       <button id="newJournalBtn" class="primary-btn">＋ 영업일지 작성</button>
@@ -530,7 +558,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 27</p>
+    <p class="sheet-desc">앱 버전 28</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -571,7 +599,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=27"></script>
-  <script src="app.js?v=27"></script>
+  <script src="calc.js?v=28"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>
