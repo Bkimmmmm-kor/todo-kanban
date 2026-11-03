@@ -583,9 +583,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 /* v28 영업일지: 재방리스트 · 영업지도 */
-:root { --m-blue: #3b82f6; --m-green: #22c55e; --m-yellow: #facc15; --m-red: #ef4444; --m-line: #ffffff; }
+:root { --m-blue: #6b9be6; --m-green: #93cfa5; --m-yellow: #f2d27e; --m-red: #f1bdb5; --m-line: #ffffff; --m-label: #4b5563; }
 @media (prefers-color-scheme: dark) {
-  :root { --m-blue: #2563eb; --m-green: #16a34a; --m-yellow: #ca8a04; --m-red: #b91c1c; --m-line: #0b0f17; }
+  :root { --m-blue: #3d6cb8; --m-green: #3e7d55; --m-yellow: #8f7630; --m-red: #6a3a38; --m-line: #1a2130; --m-label: #d1d5db; }
 }
 #journalMode button { min-width: 0; padding: 0 4px; white-space: nowrap; font-size: .85rem; }
 .revisit-hint { margin: 4px 0 8px; font-size: .8rem; }
@@ -596,18 +596,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .map-tools p { margin: 0; font-size: .8rem; flex: 1; text-align: right; }
 .map-zoom { flex: 0 0 auto; }
 .map-zoom button { height: 32px; padding: 0 14px; font-size: .85rem; white-space: nowrap; }
-#mapSvg { overflow: hidden; }
-.map-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
-#mapSvg { display: block; width: 100%; height: auto; touch-action: manipulation; }
-#mapSvg path { stroke: var(--m-line); stroke-width: .8; stroke-linejoin: round; cursor: pointer; vector-effect: non-scaling-stroke; }
-#mapSvg path.sel { stroke: var(--text); stroke-width: 2.5; }
-#mapSvg text { font-size: 9px; text-anchor: middle; fill: #111827; pointer-events: none; font-weight: 600; paint-order: stroke; stroke: rgba(255, 255, 255, .7); stroke-width: 2px; }
+.map-box { background: var(--surface); border-radius: 14px; padding: 12px; }
+#mapSvg { display: block; width: 100%; max-width: 300px; max-height: 300px; margin: 0 auto; overflow: hidden; touch-action: manipulation; }
+#mapSvg path { stroke: var(--m-line); stroke-width: .6; stroke-linejoin: round; cursor: pointer; vector-effect: non-scaling-stroke; }
+#mapSvg path.sel { stroke: var(--text); stroke-width: 1.5; }
+#mapSvg text { text-anchor: middle; dominant-baseline: middle; fill: var(--m-label); pointer-events: none; font-weight: 500; }
 .m-blue { fill: var(--m-blue); background: var(--m-blue); }
 .m-green { fill: var(--m-green); background: var(--m-green); }
 .m-yellow { fill: var(--m-yellow); background: var(--m-yellow); }
 .m-red { fill: var(--m-red); background: var(--m-red); }
-.map-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 4px; font-size: .78rem; color: var(--muted); }
-.map-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.map-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin: 10px 0 4px; font-size: .75rem; color: var(--muted); }
+.map-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
 .map-sec { margin: 14px 0 8px; font-weight: 700; }
 .map-sec small { font-weight: 400; color: var(--muted); margin-left: 6px; }
 .map-visits { list-style: none; margin: 0; padding: 0; }

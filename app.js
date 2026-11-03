@@ -1137,8 +1137,8 @@ function renderSalesMap() {
   });
   const sel = paths.find((p) => p.dataset.id === mapSel);
   if (sel) paths.push(paths.splice(paths.indexOf(sel), 1)[0]); // 굵은 테두리가 가려지지 않게 맨 위로
-  // 이름: 수도권 보기는 경기·인천만(서울은 너무 좁음), 서울 보기는 서울 구
-  const labels = shown.filter((a) => seoul || !a.id.startsWith('서울')).map((a) => {
+  // 이름: 서울 보기는 구 이름, 수도권 보기는 누른 시·구만 (깔끔하게)
+  const labels = shown.filter((a) => seoul || a.id === mapSel).map((a) => {
     const t = svgEl('text', { x: a.x, y: a.y });
     t.textContent = areaLabel(a);
     return t;
@@ -1146,7 +1146,7 @@ function renderSalesMap() {
   svg.replaceChildren(...paths, ...labels);
   const box = seoul ? mapData.seoul : [0, 0, mapData.w, mapData.h];
   svg.setAttribute('viewBox', box.join(' '));
-  labels.forEach((t) => t.setAttribute('style', `font-size:${(box[2] / (seoul ? 40 : 48)).toFixed(1)}px`));
+  labels.forEach((t) => t.setAttribute('style', `font-size:${(box[2] / (seoul ? 42 : 40)).toFixed(1)}px`));
   $$('#mapZoom button').forEach((b) => b.classList.toggle('on', b.dataset.zoom === mapZoom));
   const total = mapData.areas.length;
   $('#mapSummary').textContent = `방문한 시·구 ${visits.size} / ${total}`;
