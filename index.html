@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=29">
+  <link rel="stylesheet" href="style.css?v=30">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -128,6 +128,12 @@
       <p class="empty journal-empty">감도 상·중인 치과가 없어요.</p>
     </main>
     <main class="scroll" data-jmode="map" hidden>
+      <div class="coming-soon">
+        <span class="cs-icon">🚧</span>
+        <p class="cs-title">공사 중이에요</p>
+        <p class="cs-desc">영업지도는 다듬어서 다시 열 예정이에요.</p>
+      </div>
+      <div id="mapPane" hidden>
       <div class="map-tools">
         <div class="segmented map-zoom" id="mapZoom">
           <button type="button" data-zoom="all" class="on">수도권</button>
@@ -144,6 +150,7 @@
       </div>
       <div id="mapDetail"></div>
       <div id="mapUnmatched"></div>
+      </div>
     </main>
     <div class="action-bar">
       <button id="newJournalBtn" class="primary-btn">＋ 영업일지 작성</button>
@@ -558,7 +565,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 29</p>
+    <p class="sheet-desc">앱 버전 30</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -599,7 +606,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=29"></script>
-  <script src="app.js?v=29"></script>
+  <script src="calc.js?v=30"></script>
+  <script src="app.js?v=30"></script>
 </body>
 </html>

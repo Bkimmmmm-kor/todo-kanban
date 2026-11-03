@@ -954,7 +954,7 @@ function journalHead(title) {
 
 function renderJournals() {
   if (journalMode === 'revisit') renderRevisit();
-  if (journalMode === 'map') renderSalesMap();
+  if (journalMode === 'map' && MAP_READY) renderSalesMap();
   renderDayList('#journalList', journals, (li, j) => {
     const head = journalHead(j.clinic || '(치과명 없음)');
     if (j.region) head.append(tagEl(`📍 ${j.region}`));
@@ -1038,6 +1038,7 @@ $('#revisitList').addEventListener('click', (e) => {
 });
 
 // ---------- 영업지도 ----------
+const MAP_READY = false; // 영업지도 보류(공사 중). 다시 열 때 true + index.html #mapPane hidden 해제
 let mapData = null; // map/capital.json (수도권 시·구 경계 + 동 이름 사전)
 let mapLoading = null;
 let mapSel = null; // 누른 시·구 id
