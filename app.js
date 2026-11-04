@@ -736,7 +736,7 @@ function cardEl(task) {
   if (task.clinic || task.due) {
     const tags = document.createElement('div');
     tags.className = 'tags';
-    if (task.clinic) tags.append(tagEl(`🦷 ${task.clinic}`));
+    if (task.clinic) tags.append(tagEl(`🦷 ${task.clinic}`, 'clinic'));
     if (task.due) {
       const { text, diff } = dueLabel(task.due);
       const urgent = task.col !== 'done' && (diff <= 0 ? 'due-over' : diff === 1 ? 'due-soon' : '');
