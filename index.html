@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="style.css?v=32">
+  <link rel="stylesheet" href="style.css?v=33">
 </head>
 <body data-view="todo">
   <header class="top">
@@ -171,7 +171,7 @@
   <!-- ========== 실험트랙 ========== -->
   <section class="view" data-view="track" hidden>
     <main class="scroll">
-      <p class="hint track-hint">특정 치과의 매출을 올리기 위한 지원 실험이에요. 한 사람당 1~2개 트랙으로 운영해요.</p>
+      <p class="hint track-hint">특정 치과의 매출을 올리기 위한 지원 실험이에요. 한 사람당 1~2개가 보통이고, 더 만들 수도 있어요.</p>
       <ul id="trackList" class="journal-list"></ul>
       <p class="empty journal-empty">아직 실험트랙이 없어요.<br>아래 버튼으로 첫 트랙을 만들어 보세요.</p>
     </main>
@@ -512,6 +512,24 @@
     </form>
   </dialog>
 
+  <!-- 실험트랙 치과: 특이사항 기록 (수정은 위 버튼) -->
+  <dialog id="tcNoteDialog" class="sheet tall">
+    <form id="tcNoteForm" method="dialog" class="edit-form" autocomplete="off">
+      <div class="sheet-head">
+        <p id="tcNoteTitle" class="sheet-title" tabindex="-1" autofocus>치과</p>
+        <button type="button" id="tcNoteEditBtn" class="head-btn">✏️ 수정</button>
+      </div>
+      <p id="tcNoteInfo" class="sheet-desc"></p>
+      <ul id="tcNoteList" class="tc-notes"></ul>
+      <label>특이사항<textarea id="tcNoteText" rows="3" placeholder="예: 원장님 상담 동행, 첫 진단 접수 예정"></textarea></label>
+      <label>날짜<input id="tcNoteDate" type="date"></label>
+      <div class="edit-actions">
+        <button type="button" data-action="close" class="muted">닫기</button>
+        <button type="submit" class="primary">기록</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- 월별 매출 목표 수정 (마스터) -->
   <dialog id="targetDialog" class="sheet tall">
     <form id="targetForm" method="dialog" class="edit-form" autocomplete="off">
@@ -565,7 +583,7 @@
     <input id="importFile" type="file" accept="application/json,.json" hidden>
     <button id="logoutBtn">🚪 로그아웃</button>
     <button data-action="close" class="muted">닫기</button>
-    <p class="sheet-desc">앱 버전 32</p>
+    <p class="sheet-desc">앱 버전 33</p>
   </dialog>
 
   <!-- 주간 엑셀 (마스터) -->
@@ -606,7 +624,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
-  <script src="calc.js?v=32"></script>
-  <script src="app.js?v=32"></script>
+  <script src="calc.js?v=33"></script>
+  <script src="app.js?v=33"></script>
 </body>
 </html>

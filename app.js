@@ -736,12 +736,12 @@ function cardEl(task) {
   if (task.clinic || task.due) {
     const tags = document.createElement('div');
     tags.className = 'tags';
-    if (task.clinic) tags.append(tagEl(`🦷 ${task.clinic}`, 'clinic'));
     if (task.due) {
       const { text, diff } = dueLabel(task.due);
       const urgent = task.col !== 'done' && (diff <= 0 ? 'due-over' : diff === 1 ? 'due-soon' : '');
       tags.append(tagEl(`📅 ${text}`, urgent || ''));
     }
+    if (task.clinic) tags.append(tagEl(`🦷 ${task.clinic}`, 'clinic'));
     li.append(tags);
   }
   if (task.isNew) {
@@ -1660,9 +1660,12 @@ try {
 }
 
 // ================= 실험트랙 =================
-// 트랙: 특정 치과들의 매출을 올리려는 지원 실험 (1인 1~2개). 치과마다 진단 접수·제작 건수를 직접 셈
+// 트랙: 특정 치과들의 매출을 올리려는 지원 실험 (1인 1~2개가 보통, 더 만들 수 있음). 치과마다 진단 접수·제작 건수를 직접 셈
 const trackSum = (clinics) => clinics.reduce((s, c) => ({ dx: s.dx + (c.dx || 0), mnft: s.mnft + (c.mnft || 0) }), { dx: 0, mnft: 0 });
 const tcName = (c) => (c.region ? `${c.region}_${c.clinic}` : c.clinic);
+// 치과별 특이사항 기록 [{date, text, at}] — 최근 것이 위
+const tcNotes = (c) => [...(c.notes || [])].sort((a, b) => b.date.localeCompare(a.date) || (b.at || 0) - (a.at || 0));
+const tcLastNote = (c) => tcNotes(c)[0] || null;
 // 기간: 치과 종료일이 비어 있으면 트랙 종료일을 따름. 치과는 앞당겨 끝낼 수만 있음(조기 종료, 연장 불가)
 const mdSlash = (d) => d.slice(5).replace('-', '/');
 const tcEnd = (t, c) => c.end || t.end || '';
@@ -1723,6 +1726,13 @@ function renderTracks() {
       const meta = document.createElement('span');
       meta.textContent = [c.kind, `${tcStatus(t, c)}(${tcPeriod(t, c)})`].filter(Boolean).join(' · ');
       main.append(name, meta);
+      const last = tcLastNote(c);
+      if (last) {
+        const note = document.createElement('span');
+        note.className = 'tc-last';
+        note.textContent = `📝 ${mdSlash(last.date)} ${last.text}`;
+        main.append(note);
+      }
       const counts = document.createElement('div');
       counts.className = 'tc-counts';
       counts.append(counterEl('진단', 'dx', c.dx), counterEl('제작', 'mnft', c.mnft));
@@ -1758,7 +1768,6 @@ function openTrack(id = null) {
 }
 
 $('#newTrackBtn').addEventListener('click', () => {
-  if (tracks.filter(trackOn).length >= 2) showToast('트랙은 1~2개로 운영해요. 끝난 트랙은 종료로 바꿔 주세요.');
   openTrack();
 });
 
@@ -1874,7 +1883,7 @@ $('#trackClinicForm').addEventListener('submit', (e) => {
     data.end = today < data.start ? data.start : today > t.end ? t.end : today;
   }
   if (data.end === t.end) data.end = ''; // 트랙 종료일을 따름 (트랙 기간이 바뀌어도 같이 바뀜)
-  t.clinics = tcEdit.idx === null ? [...t.clinics, data] : t.clinics.map((c, i) => (i === tcEdit.idx ? data : c));
+  t.clinics = tcEdit.idx === null ? [...t.clinics, data] : t.clinics.map((c, i) => (i === tcEdit.idx ? { ...c, ...data } : c));
   save();
   renderTracks();
   renderAutocomplete();
@@ -1897,7 +1906,88 @@ $('#tcDeleteBtn').addEventListener('click', () => {
   });
 });
 
-// 카드: −/＋ 는 바로 세기, 치과 줄은 치과 수정, '＋ 치과 추가', 나머지는 트랙 수정
+// ---------- 치과 특이사항 (누르면 기록, 위 '수정' 버튼으로 치과 수정) ----------
+const tcNoteDialog = $('#tcNoteDialog');
+let tcNoteAt = null; // { id: 트랙 id, idx: 치과 순번 }
+
+function renderTcNote() {
+  const t = tracks.find((x) => x.id === tcNoteAt?.id);
+  const c = t?.clinics[tcNoteAt.idx];
+  if (!c) return tcNoteDialog.close();
+  $('#tcNoteTitle').textContent = tcName(c);
+  $('#tcNoteInfo').textContent = [t.title, c.kind, `${tcStatus(t, c)}(${tcPeriod(t, c)})`, `진단 ${c.dx || 0} · 제작 ${c.mnft || 0}`]
+    .filter(Boolean).join(' · ');
+  const notes = tcNotes(c);
+  $('#tcNoteList').replaceChildren(...(notes.length ? notes.map((n) => {
+    const li = document.createElement('li');
+    const date = document.createElement('span');
+    date.className = 'n-date';
+    date.textContent = mdSlash(n.date);
+    const text = document.createElement('span');
+    text.className = 'n-text';
+    text.textContent = n.text;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.dataset.at = n.at;
+    del.textContent = '×';
+    del.setAttribute('aria-label', '특이사항 지우기');
+    li.append(date, text, del);
+    return li;
+  }) : [Object.assign(document.createElement('li'), { className: 'n-empty', textContent: '아직 적은 특이사항이 없어요.' })]));
+}
+
+function openTcNote(id, idx) {
+  tcNoteAt = { id, idx };
+  $('#tcNoteText').value = '';
+  $('#tcNoteDate').value = ymd(new Date());
+  renderTcNote();
+  tcNoteDialog.showModal();
+}
+
+// 특이사항 바꾸기: fn(notes) → 새 notes
+function updateTcNotes(fn) {
+  const t = tracks.find((x) => x.id === tcNoteAt?.id);
+  if (!t) return null;
+  t.clinics = t.clinics.map((c, i) => (i === tcNoteAt.idx ? { ...c, notes: fn(c.notes || []) } : c));
+  save();
+  renderTracks();
+  renderTcNote();
+  return t;
+}
+
+$('#tcNoteForm').addEventListener('submit', (e) => {
+  e.preventDefault(); // 기록 후에도 시트는 열어 둠
+  const text = $('#tcNoteText').value.trim();
+  if (!text) return showToast('특이사항을 적어 주세요.');
+  updateTcNotes((notes) => [...notes, { date: $('#tcNoteDate').value || ymd(new Date()), text, at: Date.now() }]);
+  $('#tcNoteText').value = '';
+  vibrate(30);
+  showToast('특이사항을 기록했어요.');
+});
+
+$('#tcNoteList').addEventListener('click', (e) => {
+  const at = e.target.closest('button[data-at]')?.dataset.at;
+  if (!at) return;
+  const at0 = { ...tcNoteAt };
+  let removed = null;
+  updateTcNotes((notes) => notes.filter((n) => {
+    if (String(n.at) !== at) return true;
+    removed = n;
+    return false;
+  }));
+  showToast('특이사항을 지웠어요.', () => {
+    tcNoteAt = at0;
+    updateTcNotes((notes) => [...notes, removed]);
+  });
+});
+
+$('#tcNoteEditBtn').addEventListener('click', () => {
+  const { id, idx } = tcNoteAt;
+  tcNoteDialog.close();
+  openTrackClinic(id, idx);
+});
+
+// 카드: −/＋ 는 바로 세기, 치과 줄은 특이사항(위 버튼으로 수정), '＋ 치과 추가', 나머지는 트랙 수정
 $('#trackList').addEventListener('click', (e) => {
   const card = e.target.closest('.track-card');
   const t = card && tracks.find((x) => x.id === card.dataset.id);
@@ -1911,7 +2001,7 @@ $('#trackList').addEventListener('click', (e) => {
     save();
     renderTracks();
     vibrate(15);
-  } else if (row) openTrackClinic(t.id, Number(row.dataset.idx));
+  } else if (row) openTcNote(t.id, Number(row.dataset.idx));
   else if (e.target.closest('.tc-add')) openTrackClinic(t.id);
   else openTrack(t.id);
 });
@@ -2905,8 +2995,16 @@ function pptTracks(pptx, name, list) {
       cells: [clip(tcName(c), 20), c.kind || '-', `${tcStatus(t, c)}(${tcPeriod(t, c)})`, c.dx || 0, c.mnft || 0],
     }));
     rows.push({ cells: [`합계 (${t.clinics.length}곳)`, '', '', sum.dx, sum.mnft], bold: true });
+    const noted = t.clinics.filter(tcLastNote);
     page.table(['지역_치과명', '유형', '상태(기간)', '진단', '제작'], rows, [2.7, 0.8, 2.07, 0.75, 0.75],
       ['left', 'center', 'left', 'center', 'center']);
+    if (noted.length) {
+      page.sub('치과별 최근 특이사항');
+      noted.forEach((c) => {
+        const n = tcLastNote(c);
+        page.item(`${clip(tcName(c), 20)}: ${n.text.replace(/\s+/g, ' ')} (${mdSlash(n.date)})`);
+      });
+    }
   });
 }
 
@@ -3125,7 +3223,8 @@ async function buildFullBackup() {
     if (!t.clinics.length) return [{ ...base, ...tail }];
     return t.clinics.map((c) => ({
       ...base, 지역: c.region || '', 치과명: c.clinic || '', 유형: c.kind || '',
-      치과상태: tcStatus(t, c), 시작일: c.start || '', 종료일: tcEnd(t, c), 진단: c.dx || 0, 제작: c.mnft || 0, ...tail,
+      치과상태: tcStatus(t, c), 시작일: c.start || '', 종료일: tcEnd(t, c), 진단: c.dx || 0, 제작: c.mnft || 0,
+      특이사항: tcNotes(c).map((n) => `${n.date} ${n.text}`).join('\n'), ...tail,
     }));
   }).sort(byName);
 
@@ -3173,8 +3272,8 @@ async function buildFullBackup() {
     ['영업사원', '날짜', '요일', '협력자', '치과명', '협력내용', '결과', '작성일시', 'ID', '사용자ID'],
     [12, 12, 6, 16, 20, 45, 45, 17, 16, 38]), '협업일지');
   XLSX.utils.book_append_sheet(wb, sheet(trackSheet,
-    ['영업사원', '트랙', '트랙상태', '트랙시작일', '트랙종료일', '목적', '진행방법', '지역', '치과명', '유형', '치과상태', '시작일', '종료일', '진단', '제작', '작성일시', 'ID', '사용자ID'],
-    [12, 24, 8, 12, 12, 36, 36, 10, 20, 8, 9, 12, 12, 6, 6, 17, 16, 38]), '실험트랙');
+    ['영업사원', '트랙', '트랙상태', '트랙시작일', '트랙종료일', '목적', '진행방법', '지역', '치과명', '유형', '치과상태', '시작일', '종료일', '진단', '제작', '특이사항', '작성일시', 'ID', '사용자ID'],
+    [12, 24, 8, 12, 12, 36, 36, 10, 20, 8, 9, 12, 12, 6, 6, 40, 17, 16, 38]), '실험트랙');
   XLSX.utils.book_append_sheet(wb, sheet(boardSheet, ['종류', '내용', '할인', '종료일', '수정일시'], [10, 60, 40, 12, 17]), '공지·프로모션');
 
   XLSX.writeFile(wb, `할일보드_전체백업_${ymd(now)}.xlsx`);

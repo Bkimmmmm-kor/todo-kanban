@@ -266,7 +266,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: .95rem; line-height: 1.45; cursor: pointer;
 }
 .board-note[hidden] { display: none; }
-.board-note.notice { background: #fef3c7; color: #78350f; }
+.board-note.notice {
+  background: var(--surface); color: var(--text); font-weight: 600;
+  border: 1px solid var(--border); border-left: 4px solid #f59e0b; box-shadow: var(--shadow);
+}
 .board-note.promo { margin: 0 0 16px; background: #fce7f3; color: #831843; }
 .board-note.empty-master { background: none; border: 1px dashed var(--border); color: var(--muted); }
 .note-body {
@@ -275,7 +278,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .board-note.expanded .note-body { -webkit-line-clamp: unset; display: block; }
 @media (prefers-color-scheme: dark) {
-  .board-note.notice { background: #422006; color: #fde68a; }
   .board-note.promo { background: #500724; color: #fbcfe8; }
 }
 
@@ -534,6 +536,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--bg); color: var(--text); font-size: 1rem; line-height: 1; padding: 0;
 }
+.tc-main .tc-last { display: block; margin-top: 2px; color: var(--text); opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-head { display: flex; align-items: flex-start; gap: 8px; }
+.sheet-head .sheet-title { flex: 1; min-width: 0; }
+.sheet .head-btn {
+  display: inline-block; width: auto; flex: 0 0 auto; padding: 6px 12px; text-align: center; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: .85rem; font-weight: 600;
+}
+.tc-notes { list-style: none; margin: 4px 0 8px; padding: 0; max-height: 40vh; overflow-y: auto; }
+.tc-notes li { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .92rem; }
+.tc-notes li .n-date { flex: 0 0 auto; color: var(--muted); font-size: .8rem; padding-top: 2px; }
+.tc-notes li .n-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.sheet .tc-notes li button { display: inline-block; width: auto; flex: 0 0 auto; border: 0; background: none; color: var(--muted); font-size: 1.1rem; padding: 0 6px; }
+.tc-notes .n-empty { color: var(--muted); justify-content: center; }
 .tc-add {
   width: 100%; margin-top: 6px; padding: 9px; border: 1px dashed var(--border); border-radius: 10px;
   background: none; color: var(--accent); font: inherit; font-size: .9rem;
