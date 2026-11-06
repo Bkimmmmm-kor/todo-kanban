@@ -266,10 +266,23 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: .95rem; line-height: 1.45; cursor: pointer;
 }
 .board-note[hidden] { display: none; }
-.board-note.notice {
-  background: var(--surface); color: var(--text); font-weight: 600;
-  border: 1px solid var(--border); border-left: 4px solid #f59e0b; box-shadow: var(--shadow);
+.board-note.notice { background: #fef3c7; color: #78350f; }
+/* 공지 끝 NEW: 무지개처럼 색이 바뀜 */
+.note-new {
+  flex: 0 0 auto; align-self: center; padding: 2px 7px; border-radius: 999px;
+  font-size: .7rem; font-weight: 800; letter-spacing: .03em; color: #fff;
+  animation: psy 1.6s linear infinite;
 }
+.note-new[hidden] { display: none; }
+@keyframes psy {
+  0%, 100% { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+  17% { background: #f97316; box-shadow: 0 0 6px #f97316; }
+  33% { background: #eab308; box-shadow: 0 0 6px #eab308; }
+  50% { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+  67% { background: #3b82f6; box-shadow: 0 0 6px #3b82f6; }
+  83% { background: #a855f7; box-shadow: 0 0 6px #a855f7; }
+}
+@media (prefers-reduced-motion: reduce) { .note-new { animation: none; background: #ef4444; } }
 .board-note.promo { margin: 0 0 16px; background: #fce7f3; color: #831843; }
 .board-note.empty-master { background: none; border: 1px dashed var(--border); color: var(--muted); }
 .note-body {
@@ -278,6 +291,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .board-note.expanded .note-body { -webkit-line-clamp: unset; display: block; }
 @media (prefers-color-scheme: dark) {
+  .board-note.notice { background: #422006; color: #fde68a; }
   .board-note.promo { background: #500724; color: #fbcfe8; }
 }
 

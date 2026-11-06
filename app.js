@@ -2282,6 +2282,8 @@ function renderNotes() {
     if (!hasContent) text = `${NOTE_LABELS[kind]} 작성하기 (마스터)`;
     else if (expired) text = `(종료된 프로모션) ${body}`;
     el.querySelector('.note-body').textContent = text;
+    const badge = el.querySelector('.note-new');
+    if (badge) badge.hidden = !hasContent;
     const chips = el.querySelector('.promo-chips');
     if (chips) {
       const items = expired ? [] : PROMO_PKGS
